@@ -782,32 +782,64 @@ while running:
                     arena_enemy_health -= 1
                     play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
 
-            # Enhanced Enemy AI
-            # Ensure the enemy always has a target position
+
+            # Improved Arena Enemy AI
+            # 1. Smarter movement: track player, randomize target, and sometimes dash toward player
+            ai_retarget = False
             if abs(arena_enemy.centerx - enemy_target_x) < 5 and abs(arena_enemy.centery - enemy_target_y) < 5:
-                # Assign a new random target position when the enemy reaches the current target
-                enemy_target_x = random.randint(0, WIDTH - arena_enemy.width)
-                enemy_target_y = random.randint(0, HEIGHT // 2 - arena_enemy.height)
+                ai_retarget = True
+            # Occasionally retarget even if not reached
+            if random.random() < 0.01:
+                ai_retarget = True
+            if ai_retarget:
+                # 70% chance to target player, 30% random
+                if random.random() < 0.7:
+                    enemy_target_x = player.centerx + random.randint(-30, 30)
+                    enemy_target_y = player.centery - random.randint(30, 80)
+                    enemy_target_y = max(0, min(enemy_target_y, HEIGHT // 2 - arena_enemy.height))
+                else:
+                    enemy_target_x = random.randint(0, WIDTH - arena_enemy.width)
+                    enemy_target_y = random.randint(0, HEIGHT // 2 - arena_enemy.height)
 
-            # Move enemy toward the target position
-            if arena_enemy.centerx < enemy_target_x:
-                arena_enemy.x += arena_enemy_speed
-            elif arena_enemy.centerx > enemy_target_x:
-                arena_enemy.x -= arena_enemy_speed
+            # Move enemy toward the target position, with some jitter
+            move_x = enemy_target_x - arena_enemy.centerx
+            move_y = enemy_target_y - arena_enemy.centery
+            if abs(move_x) > 2:
+                arena_enemy.x += int(arena_enemy_speed * (1 if move_x > 0 else -1))
+            if abs(move_y) > 2:
+                arena_enemy.y += int(arena_enemy_speed * (1 if move_y > 0 else -1))
+            # Add jitter for unpredictability
+            if random.random() < 0.05:
+                arena_enemy.x += random.choice([-1, 1]) * random.randint(0, 2)
+                arena_enemy.y += random.choice([-1, 1]) * random.randint(0, 2)
+            # Clamp enemy position
+            arena_enemy.x = max(0, min(arena_enemy.x, WIDTH - arena_enemy.width))
+            arena_enemy.y = max(0, min(arena_enemy.y, HEIGHT // 2 - arena_enemy.height))
 
-            if arena_enemy.centery < enemy_target_y:
-                arena_enemy.y += arena_enemy_speed
-            elif arena_enemy.centery > enemy_target_y:
-                arena_enemy.y -= arena_enemy_speed
-
-            # Smarter dodging logic
+            # 2. Smarter dodging: dodge only if bullet is on a collision course and close
             for bullet in bullets:
-                if bullet.colliderect(arena_enemy.inflate(50, 50)):  # Detect nearby bullets
-                    if random.random() < 0.5:  # 50% chance to dodge left or right
-                        if arena_enemy.left > 0:
-                            arena_enemy.x -= arena_enemy_speed * 5  # Dodge left
-                        elif arena_enemy.right < WIDTH:
-                            arena_enemy.x += arena_enemy_speed * 5  # Dodge right
+                if bullet.y < arena_enemy.bottom and bullet.y > arena_enemy.top - 100:
+                    if abs(bullet.centerx - arena_enemy.centerx) < 40:
+                        # 70% chance to dodge, prefer direction with more space
+                        if random.random() < 0.7:
+                            if arena_enemy.centerx < WIDTH // 2:
+                                arena_enemy.x += arena_enemy_speed * 6
+                            else:
+                                arena_enemy.x -= arena_enemy_speed * 6
+                        else:
+                            # Random dodge
+                            arena_enemy.x += random.choice([-1, 1]) * arena_enemy_speed * 6
+                        # Clamp after dodge
+                        arena_enemy.x = max(0, min(arena_enemy.x, WIDTH - arena_enemy.width))
+
+            # 3. Aggressive dash: sometimes dash toward player if far away
+            if random.random() < 0.01 and abs(arena_enemy.centerx - player.centerx) > 100:
+                dash_dir = 1 if player.centerx > arena_enemy.centerx else -1
+                arena_enemy.x += dash_dir * arena_enemy_speed * 10
+                arena_enemy.x = max(0, min(arena_enemy.x, WIDTH - arena_enemy.width))
+
+            # 4. Predictive shooting: aim at player's future position with more accuracy
+            # (handled below in the shooting logic)
 
             # Predictive shooting logic and bullet movement only if enemy is not destroyed
             current_time = pygame.time.get_ticks()
