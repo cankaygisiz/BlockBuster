@@ -90,9 +90,11 @@ pause = False
 get_ready_start_time = 0
 get_ready_duration = 2000  # 2 seconds
 
-# Player
+# Player (with float position for smooth movement)
 player = pygame.Rect(WIDTH//2 - 25, HEIGHT - 60, 50, 50)
-player_speed = 10
+player_pos_x = float(player.x)
+player_pos_y = float(player.y)
+player_speed = 25
 sprint_speed = 20
 shield = False
 shield_duration = 3000  # milliseconds
@@ -112,10 +114,14 @@ energy_drain_rate = 0.5
 dash_cooldown = 2000  # Cooldown time in milliseconds (2 seconds)
 last_dash_time = 0    # Tracks the last time the player dashed
 
-# Dash animation
+import math
+# Dash animation (improved: smooth interpolation)
 dash_animation_active = False
 dash_animation_start_time = 0
-dash_animation_duration = 200  # Duration of the dash animation in milliseconds
+dash_animation_duration = 250  # Duration of the dash animation in milliseconds (slightly longer for smoothness)
+dash_animation_max_outline = 30  # Max outline thickness
+dash_animation_min_outline = 3   # Min outline thickness
+dash_animation_max_alpha = 180   # Max alpha for the outline
 
 # Bullets
 bullets = []
@@ -277,13 +283,32 @@ def reset_game():
     enemy_target_x = WIDTH // 2
     enemy_target_y = 50
 
-# Enemy AI – Move towards the player
+
+# Improved Survival Enemy AI – Smarter movement, dodging, and shooting
 def move_enemy(enemy):
-    if enemy.centerx < player.centerx:
-        enemy.x += 1
-    elif enemy.centerx > player.centerx:
-        enemy.x -= 1
+    # Track player horizontally
+    dx = player.centerx - enemy.centerx
+    if abs(dx) > 5:
+        enemy.x += int(enemy_speed * (1 if dx > 0 else -1))
+    # Move down
     enemy.y += enemy_speed
+    # Dodge bullets if any are close and on a collision course
+    for bullet in bullets:
+        if bullet.y < enemy.bottom and bullet.y > enemy.top - 100:
+            if abs(bullet.centerx - enemy.centerx) < 40:
+                # 60% chance to dodge, prefer direction with more space
+                if random.random() < 0.6:
+                    if enemy.centerx < WIDTH // 2:
+                        enemy.x += int(enemy_speed * 4)
+                    else:
+                        enemy.x -= int(enemy_speed * 4)
+                else:
+                    enemy.x += random.choice([-1, 1]) * int(enemy_speed * 4)
+                # Clamp after dodge
+                enemy.x = max(0, min(enemy.x, WIDTH - enemy.width))
+    # Clamp position
+    enemy.x = max(0, min(enemy.x, WIDTH - enemy.width))
+    enemy.y = max(-50, min(enemy.y, HEIGHT - enemy.height))
 
 # Power-up spawn logic
 def spawn_powerup():
@@ -451,14 +476,18 @@ while running:
                 player.x += sprint_speed * 10 if keys[pygame.K_d] and player.right < WIDTH else 0
                 player.x -= sprint_speed * 10 if keys[pygame.K_a] and player.left > 0 else 0
 
-            # Restrict movement to left and right only
+            # Restrict movement to left and right only (smooth)
+            target_x = player_pos_x
             if keys[pygame.K_a] and player.left > 0:
-                player.x -= player_speed
+                target_x -= player_speed
             if keys[pygame.K_d] and player.right < WIDTH:
-                player.x += player_speed
-
+                target_x += player_speed
+            # Smoothly interpolate player x
+            player_pos_x += (target_x - player_pos_x) * 0.4
             # Ensure the player's y-position remains constant
-            player.y = HEIGHT - 60
+            player_pos_y = HEIGHT - 60
+            player.x = int(player_pos_x)
+            player.y = int(player_pos_y)
 
             # Handle shooting with cooldown
             if keys[pygame.K_SPACE]:
@@ -665,28 +694,47 @@ while running:
         if shield:
             pygame.draw.circle(WIN, BLUE, player.center, shield_animation_radius, 2)  # Draw a glowing circle
 
-        # Draw dash animation
+        # Draw smooth dash animation
         if dash_animation_active:
             elapsed_time = pygame.time.get_ticks() - dash_animation_start_time
-            if elapsed_time < dash_animation_duration:
-                # Draw a glowing outline around the player
-                pygame.draw.rect(WIN, YELLOW, player.inflate(10, 10), 3)  # Slightly larger rectangle
-            else:
+            t = min(1.0, elapsed_time / dash_animation_duration)
+            # Ease out: fast at first, slow at end
+            t_eased = 1 - (1 - t) * (1 - t)
+            outline_size = int(10 + (dash_animation_max_outline - 10) * (1 - t_eased))
+            outline_alpha = int(dash_animation_max_alpha * (1 - t_eased))
+            # Create a surface for alpha blending
+            dash_surf = pygame.Surface((player.width + outline_size * 2, player.height + outline_size * 2), pygame.SRCALPHA)
+            # Draw a glowing outline (yellow, fading out)
+            pygame.draw.rect(
+                dash_surf,
+                (255, 255, 0, outline_alpha),
+                pygame.Rect(outline_size//2, outline_size//2, player.width + outline_size, player.height + outline_size),
+                outline_size
+            )
+            WIN.blit(dash_surf, (player.x - outline_size//2, player.y - outline_size//2))
+            if elapsed_time >= dash_animation_duration:
                 dash_animation_active = False  # Deactivate the dash animation
 
-        # Draw health bar with blink animation
+        # Draw health bar with smooth animation and blink
         pygame.draw.rect(WIN, WHITE, (WIDTH//2 - 100, 10, 200, 20))  # Background of health bar
+        global display_health
+        try:
+            display_health
+        except NameError:
+            display_health = health
+        # Smoothly interpolate displayed health
+        display_health += (health - display_health) * 0.3
+        bar_width = (display_health / max_health) * 200
         if health_blink_active:
             elapsed_time = pygame.time.get_ticks() - health_blink_start_time
             if elapsed_time < health_blink_duration:
-                # Alternate visibility every 100 milliseconds
                 if (elapsed_time // 100) % 2 == 0:
-                    pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, (health / max_health) * 200, 20))
+                    pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, bar_width, 20))
             else:
-                health_blink_active = False  # Deactivate the blink effect
-                pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, (health / max_health) * 200, 20))
+                health_blink_active = False
+                pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, bar_width, 20))
         else:
-            pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, (health / max_health) * 200, 20))
+            pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, bar_width, 20))
 
         # Draw score and level
         WIN.blit(font.render(f"Score: {score}", True, WHITE), (10, 10))
