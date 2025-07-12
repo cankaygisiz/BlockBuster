@@ -21,11 +21,15 @@ WIDTH, HEIGHT = 800, 600
 WIN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Block Buster")
 
-# Load the background image
-menu_background = pygame.image.load(resource_path("menu_background.png"))
 
-# Scale the background to fit the window
-menu_background = pygame.transform.scale(menu_background, (WIDTH, HEIGHT))
+# Load the background image with error handling
+try:
+    menu_background = pygame.image.load(resource_path("menu_background.png"))
+    menu_background = pygame.transform.scale(menu_background, (WIDTH, HEIGHT))
+except Exception as e:
+    print(f"Error loading menu background: {e}")
+    menu_background = pygame.Surface((WIDTH, HEIGHT))
+    menu_background.fill((30, 30, 30))
 
 # Colors
 WHITE = (255, 255, 255)
@@ -187,30 +191,28 @@ survival_enemy_destroy_duration = 2000  # Duration of the destruction effect in 
 global victory_music_playing
 victory_music_playing = False  # Flag to track if victory music is playing
 
-# Buttons
+
+# Centralized button definitions
+BUTTONS = {
+    "start": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 100, 200, 50),
+    "settings": pygame.Rect(WIDTH//2 - 100, HEIGHT//2, 200, 50),
+    "exit": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50),
+    "try_again": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 40, 200, 50),
+    "menu_pause": pygame.Rect(WIDTH//2 - 55, HEIGHT//2 + 20, 110, 50),
+    "survival": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 60, 200, 50),
+    "arena": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50),
+    "back": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50),
+    "menu_settings": pygame.Rect(WIDTH//2 - 55, HEIGHT - 100, 110, 50),
+    "menu_game_over": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50),
+    "menu_victory": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 50, 200, 50),
+}
+
 def draw_button(text, rect, color, alpha=150):
-    # Create a semi-transparent surface
     button_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-    button_surface.fill((*color, alpha))  # Add alpha for transparency
-
-    # Blit the semi-transparent surface onto the main window
+    button_surface.fill((*color, alpha))
     WIN.blit(button_surface, (rect.x, rect.y))
-
-    # Draw the button text
     label = font.render(text, True, WHITE)
     WIN.blit(label, (rect.x + rect.width//2 - label.get_width()//2, rect.y + rect.height//2 - label.get_height()//2))
-
-start_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 100, 200, 50)
-settings_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2, 200, 50)
-exit_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50)
-
-try_again_button = pygame.Rect(WIDTH//2 - 120, HEIGHT//2, 110, 50)
-menu_button_pause = pygame.Rect(WIDTH//2 - 55, HEIGHT//2 + 20, 110, 50)
-
-# Buttons for game mode selection
-survival_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 60, 200, 50)
-arena_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50)
-back_button = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50)
 
 # Sliders
 slider_width = 200
@@ -240,6 +242,9 @@ def reset_game():
     global player, bullets, enemies, score, health, enemy_speed, energy, level, enemy_spawn_time, high_score
     global powerups, shield, shield_end_time, last_shot_time, last_dash_time, enemy_bullets, last_enemy_shoot_time
     global arena_enemy_health, player_health, enemy_pieces, enemy_destroyed, enemy_destroy_start_time
+    global survival_enemy_pieces, survival_enemy_destroyed, survival_enemy_destroy_start_time
+    global shield_animation_radius, shield_animation_growth, victory_music_playing
+    global enemy_target_x, enemy_target_y
 
     player.x = WIDTH//2 - 25
     player.y = HEIGHT - 60
@@ -260,11 +265,17 @@ def reset_game():
     last_enemy_shoot_time = 0
     arena_enemy_health = arena_enemy_max_health
     player_health = player_max_health
-
-    # Reset arena-specific variables
     enemy_pieces = []
     enemy_destroyed = False
     enemy_destroy_start_time = 0
+    survival_enemy_pieces = []
+    survival_enemy_destroyed = False
+    survival_enemy_destroy_start_time = 0
+    shield_animation_radius = 60
+    shield_animation_growth = 2
+    victory_music_playing = False
+    enemy_target_x = WIDTH // 2
+    enemy_target_y = 50
 
 # Enemy AI – Move towards the player
 def move_enemy(enemy):
@@ -322,41 +333,41 @@ while running:
 
             if game_state == "menu":
                 if not pause:  # Handle main menu buttons
-                    if start_button.collidepoint(mx, my):
+                    if BUTTONS["start"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pause = True  # Show game mode selection
-                    elif settings_button.collidepoint(mx, my):
+                    elif BUTTONS["settings"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         game_state = "settings"
-                    elif exit_button.collidepoint(mx, my):
+                    elif BUTTONS["exit"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pygame.quit()
                         sys.exit()
                 else:  # Handle game mode selection buttons
-                    if survival_button.collidepoint(mx, my):
+                    if BUTTONS["survival"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         reset_game()
                         get_ready_start_time = pygame.time.get_ticks()  # Start the "GET READY!" timer
                         game_state = "get_ready_survival"  # Temporary state for Survival mode
-                    elif arena_button.collidepoint(mx, my):
+                    elif BUTTONS["arena"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         reset_game()  # Reset all variables
                         get_ready_start_time = pygame.time.get_ticks()  # Start the "GET READY!" timer
                         game_state = "get_ready_arena"  # Temporary state for Arena mode
                         pause = False  # Ensure the game is not paused
                         print("Clicked on Arena button. Transitioning to 'get_ready_arena' state.")  # Debugging output
-                    elif back_button.collidepoint(mx, my):  # Handle "Back" button click
+                    elif BUTTONS["back"].collidepoint(mx, my):  # Handle "Back" button click
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pause = False  # Return to the main menu
 
             elif game_state == "game_over":
-                if try_again_button.collidepoint(mx, my):
+                if BUTTONS["try_again"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
                     reset_game()
                     play_background_music()  # Restart background music
                     pause = False  # Reset pause state
                     game_state = "play"
-                elif menu_button_game_over.collidepoint(mx, my):
+                elif BUTTONS["menu_game_over"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
                     reset_game()
                     play_background_music()  # Restart background music
@@ -364,7 +375,7 @@ while running:
                     game_state = "menu"
 
             if pause:  # Handle "MENU" button in pause menu
-                if menu_button_pause.collidepoint(mx, my):
+                if BUTTONS["menu_pause"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
                     reset_game()
                     pause = False  # Reset pause state
@@ -419,13 +430,13 @@ while running:
         WIN.blit(title, (WIDTH//2 - title.get_width()//2, 100))
         
         if not pause:  # Show the main menu buttons
-            draw_button("START", start_button, BLUE, alpha=150)
-            draw_button("SETTINGS", settings_button, BLUE, alpha=150)
-            draw_button("EXIT", exit_button, RED, alpha=150)
+            draw_button("START", BUTTONS["start"], BLUE, alpha=150)
+            draw_button("SETTINGS", BUTTONS["settings"], BLUE, alpha=150)
+            draw_button("EXIT", BUTTONS["exit"], RED, alpha=150)
         else:  # Show the game mode selection buttons
-            draw_button("SURVIVAL", survival_button, BLUE, alpha=150)
-            draw_button("ARENA", arena_button, BLUE, alpha=150)
-            draw_button("BACK", back_button, RED, alpha=150)
+            draw_button("SURVIVAL", BUTTONS["survival"], BLUE, alpha=150)
+            draw_button("ARENA", BUTTONS["arena"], BLUE, alpha=150)
+            draw_button("BACK", BUTTONS["back"], RED, alpha=150)
 
     elif game_state == "play":
         if not pause:
@@ -701,7 +712,7 @@ while running:
             WIN.blit(pause_text, (WIDTH//2 - pause_text.get_width()//2, HEIGHT//2 - 50))
             
             # Add a "MENU" button below the pause text
-            draw_button("MENU", menu_button_pause, BLUE)
+            draw_button("MENU", BUTTONS["menu_pause"], BLUE)
 
     elif game_state == "arena":
         # Draw the player
@@ -798,36 +809,40 @@ while running:
                         elif arena_enemy.right < WIDTH:
                             arena_enemy.x += arena_enemy_speed * 5  # Dodge right
 
-            # Predictive shooting logic
+            # Predictive shooting logic and bullet movement only if enemy is not destroyed
             current_time = pygame.time.get_ticks()
-            if current_time - last_enemy_shoot_time > enemy_shoot_cooldown:
-                # Predict the player's future position
-                player_future_x = player.centerx + (player_speed if keys[pygame.K_d] else -player_speed if keys[pygame.K_a] else 0)
-                player_future_y = player.centery + (player_speed if keys[pygame.K_s] else -player_speed if keys[pygame.K_w] else 0)
+            if not enemy_destroyed:
+                if current_time - last_enemy_shoot_time > enemy_shoot_cooldown:
+                    # Predict the player's future position
+                    player_future_x = player.centerx + (player_speed if keys[pygame.K_d] else -player_speed if keys[pygame.K_a] else 0)
+                    player_future_y = player.centery + (player_speed if keys[pygame.K_s] else -player_speed if keys[pygame.K_w] else 0)
 
-                # Create a bullet aimed at the predicted position
-                bullet_dx = player_future_x - arena_enemy.centerx
-                bullet_dy = player_future_y - arena_enemy.centery
-                bullet_distance = max(1, (bullet_dx**2 + bullet_dy**2)**0.5)  # Avoid division by zero
-                bullet_velocity_x = (bullet_dx / bullet_distance) * enemy_bullet_speed
-                bullet_velocity_y = (bullet_dy / bullet_distance) * enemy_bullet_speed
+                    # Create a bullet aimed at the predicted position
+                    bullet_dx = player_future_x - arena_enemy.centerx
+                    bullet_dy = player_future_y - arena_enemy.centery
+                    bullet_distance = max(1, (bullet_dx**2 + bullet_dy**2)**0.5)  # Avoid division by zero
+                    bullet_velocity_x = (bullet_dx / bullet_distance) * enemy_bullet_speed
+                    bullet_velocity_y = (bullet_dy / bullet_distance) * enemy_bullet_speed
 
-                # Add the bullet with velocity
-                enemy_bullets.append({"rect": pygame.Rect(arena_enemy.centerx - 5, arena_enemy.bottom, 10, 20),
-                                      "velocity": (bullet_velocity_x, bullet_velocity_y)})
+                    # Add the bullet with velocity
+                    enemy_bullets.append({"rect": pygame.Rect(arena_enemy.centerx - 5, arena_enemy.bottom, 10, 20),
+                                          "velocity": (bullet_velocity_x, bullet_velocity_y)})
 
-                last_enemy_shoot_time = current_time
+                    last_enemy_shoot_time = current_time
 
-            # Move enemy bullets
-            for bullet in enemy_bullets[:]:
-                bullet["rect"].x += bullet["velocity"][0]
-                bullet["rect"].y += bullet["velocity"][1]
-                if bullet["rect"].top > HEIGHT or bullet["rect"].bottom < 0 or bullet["rect"].left > WIDTH or bullet["rect"].right < 0:
-                    enemy_bullets.remove(bullet)  # Remove bullets that go off-screen
-                elif bullet["rect"].colliderect(player):
-                    enemy_bullets.remove(bullet)
-                    player_health -= 1
-                    play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                # Move enemy bullets
+                for bullet in enemy_bullets[:]:
+                    bullet["rect"].x += bullet["velocity"][0]
+                    bullet["rect"].y += bullet["velocity"][1]
+                    if bullet["rect"].top > HEIGHT or bullet["rect"].bottom < 0 or bullet["rect"].left > WIDTH or bullet["rect"].right < 0:
+                        enemy_bullets.remove(bullet)  # Remove bullets that go off-screen
+                    elif bullet["rect"].colliderect(player):
+                        enemy_bullets.remove(bullet)
+                        player_health -= 1
+                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+            else:
+                # If enemy is destroyed, clear all enemy bullets
+                enemy_bullets.clear()
 
             # Check for game over or victory
             if arena_enemy_health <= 0 and not enemy_destroyed:
@@ -872,12 +887,12 @@ while running:
             WIN.blit(pause_text, (WIDTH//2 - pause_text.get_width()//2, HEIGHT//2 - 50))
             
             # Add a "MENU" button below the pause text
-            draw_button("MENU", menu_button_pause, BLUE)
+            draw_button("MENU", BUTTONS["menu_pause"], BLUE)
 
             # Handle "MENU" button click
             if event.type == pygame.MOUSEBUTTONDOWN:
                 mx, my = pygame.mouse.get_pos()
-                if menu_button_pause.collidepoint(mx, my):
+                if BUTTONS["menu_pause"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
                     reset_game()
                     pause = False  # Reset pause state
@@ -904,13 +919,12 @@ while running:
         WIN.blit(victory_text, (WIDTH//2 - victory_text.get_width()//2, HEIGHT//2 - 50))
 
         # Add a "Menu" button
-        menu_button_victory = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 50, 200, 50)
-        draw_button("MENU", menu_button_victory, BLUE)
+        draw_button("MENU", BUTTONS["menu_victory"], BLUE)
 
         # Handle button clicks
         if event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = pygame.mouse.get_pos()
-            if menu_button_victory.collidepoint(mx, my):
+            if BUTTONS["menu_victory"].collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
                 reset_game()  # Reset all variables
                 pygame.mixer.music.stop()  # Stop victory music
@@ -938,8 +952,7 @@ while running:
         draw_slider(slider_hit_rect, hit_sound_volume)
 
         # Draw the menu button
-        menu_button_settings = pygame.Rect(WIDTH//2 - 55, HEIGHT - 100, 110, 50)
-        draw_button("MENU", menu_button_settings, BLUE)
+        draw_button("MENU", BUTTONS["menu_settings"], BLUE)
 
         # Handle slider interaction
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -950,7 +963,7 @@ while running:
                 dragging_slider = "shoot"
             elif slider_hit_rect.collidepoint(mx, my):
                 dragging_slider = "hit"
-            elif menu_button_settings.collidepoint(mx, my):  # Handle "MENU" button click
+            elif BUTTONS["menu_settings"].collidepoint(mx, my):  # Handle "MENU" button click
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
                 game_state = "menu"
 
