@@ -2,6 +2,7 @@ import pygame
 import random
 import sys
 import os
+import json
 
 def resource_path(relative_path):
     """ Get the absolute path to a resource, works for PyInstaller """
@@ -63,12 +64,45 @@ channel_fx_hit = pygame.mixer.Channel(2)
 channel_fx_ui = pygame.mixer.Channel(3)
 channel_fx_powerup = pygame.mixer.Channel(4)
 
-# Sound volumes
+
+# Sound volumes (defaults)
 background_music_volume = 0.1
 shoot_sound_volume = 0.5
 hit_sound_volume = 0.5
 click_sound_volume = 0.5
 powerup_sound_volume = 0.5
+
+# --- Settings persistence logic ---
+SETTINGS_FILE = "settings.json"
+def save_settings():
+    settings = {
+        "background_music_volume": background_music_volume,
+        "shoot_sound_volume": shoot_sound_volume,
+        "hit_sound_volume": hit_sound_volume,
+        "click_sound_volume": click_sound_volume,
+        "powerup_sound_volume": powerup_sound_volume
+    }
+    try:
+        with open(SETTINGS_FILE, "w") as f:
+            json.dump(settings, f)
+    except Exception as e:
+        print(f"Error saving settings: {e}")
+
+def load_settings():
+    global background_music_volume, shoot_sound_volume, hit_sound_volume, click_sound_volume, powerup_sound_volume
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+        background_music_volume = settings.get("background_music_volume", background_music_volume)
+        shoot_sound_volume = settings.get("shoot_sound_volume", shoot_sound_volume)
+        hit_sound_volume = settings.get("hit_sound_volume", hit_sound_volume)
+        click_sound_volume = settings.get("click_sound_volume", click_sound_volume)
+        powerup_sound_volume = settings.get("powerup_sound_volume", powerup_sound_volume)
+    except Exception as e:
+        print(f"Error loading settings: {e}")
+
+# Load settings at startup
+load_settings()
 
 # Play music
 def play_background_music():
@@ -262,57 +296,65 @@ def save_score(new_score):
 
 def draw_leaderboard():
     WIN.blit(menu_background, (0, 0))
-    # Card background for leaderboard
-    card_rect = pygame.Rect(WIDTH//2 - 180, 60, 360, 420)
-    card_surf = pygame.Surface((card_rect.width, card_rect.height), pygame.SRCALPHA)
-    pygame.draw.rect(card_surf, (30, 40, 60, 220), card_surf.get_rect(), border_radius=18)
+    # Card background for leaderboard (smaller, more centered)
+    card_width, card_height = 320, 340
+    card_rect = pygame.Rect(WIDTH//2 - card_width//2, HEIGHT//2 - card_height//2, card_width, card_height)
+    # Drop shadow
+    shadow_offset = 8
+    shadow_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow_surf, (0,0,0,80), shadow_surf.get_rect(), border_radius=22)
+    WIN.blit(shadow_surf, (card_rect.x + shadow_offset, card_rect.y + shadow_offset))
+    # Card
+    card_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+    pygame.draw.rect(card_surf, (36, 44, 70, 235), card_surf.get_rect(), border_radius=18)
+    pygame.draw.rect(card_surf, (80, 120, 200, 60), card_surf.get_rect(), width=2, border_radius=18)  # border
     WIN.blit(card_surf, (card_rect.x, card_rect.y))
-    # Title
-    title = big_font.render("LEADERBOARD", True, WHITE)
-    WIN.blit(title, (WIDTH//2 - title.get_width()//2, 80))
-    # Scores
+    # Title (smaller, modern)
+    title_font = pygame.font.SysFont("Arial", 32, bold=True)
+    title = title_font.render("LEADERBOARD", True, (200,220,255))
+    WIN.blit(title, (WIDTH//2 - title.get_width()//2, card_rect.y + 22))
+    # Scores (smaller font, more spacing)
     scores = load_leaderboard()
+    score_font = pygame.font.SysFont("Arial", 22, bold=False)
+    y_start = card_rect.y + 70
+    line_height = 28
     if not scores:
-        no_scores = font.render("No scores yet!", True, WHITE)
-        WIN.blit(no_scores, (WIDTH//2 - no_scores.get_width()//2, 180))
+        no_scores = score_font.render("No scores yet!", True, (220,220,220))
+        WIN.blit(no_scores, (WIDTH//2 - no_scores.get_width()//2, y_start + 2*line_height))
     else:
         for i, score in enumerate(scores):
-            entry = font.render(f"{i+1}. {score}", True, (255,255,180) if i==0 else WHITE)
-            WIN.blit(entry, (WIDTH//2 - entry.get_width()//2, 160 + i*36))
+            color = (255, 230, 120) if i==0 else (220, 220, 220) if i<3 else (180, 200, 255)
+            entry = score_font.render(f"{i+1}. {score}", True, color)
+            WIN.blit(entry, (WIDTH//2 - entry.get_width()//2, y_start + i*line_height))
     # Menu button (bottom center, matches settings screen)
     draw_button("MENU", BUTTONS["menu_leaderboard"], BLUE)
 
 def draw_button(text, rect, color, alpha=150):
-    # Improved button: rounded corners, subtle gradient, compact, hover effect
+    # Modern button: drop shadow, colored border, card style, compact, hover effect
     mouse_pos = pygame.mouse.get_pos()
     is_hovered = rect.collidepoint(mouse_pos)
-    base_color = color
-    # Gradient: slightly lighter at top, darker at bottom
-    grad_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-    for y in range(rect.height):
-        blend = y / rect.height
-        grad_color = (
-            min(255, int(base_color[0] * (1 - 0.08 * blend) + 30 * blend)),
-            min(255, int(base_color[1] * (1 - 0.08 * blend) + 30 * blend)),
-            min(255, int(base_color[2] * (1 - 0.08 * blend) + 30 * blend)),
-            alpha
-        )
-        pygame.draw.rect(grad_surface, grad_color, (0, y, rect.width, 1), border_radius=12)
-    # Draw shadow
-    shadow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-    pygame.draw.rect(shadow, (0,0,0,60), shadow.get_rect(), border_radius=14)
-    WIN.blit(shadow, (rect.x+2, rect.y+4))
-    # Draw button with rounded corners
-    WIN.blit(grad_surface, (rect.x, rect.y))
-    pygame.draw.rect(WIN, (255,255,255,40), rect, 2, border_radius=12)
-    # Hover effect: brighten and scale up slightly
+    # Drop shadow
+    shadow_offset = 5
+    shadow_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow_surf, (0,0,0,70), shadow_surf.get_rect(), border_radius=16)
+    WIN.blit(shadow_surf, (rect.x + shadow_offset, rect.y + shadow_offset))
+    # Card/button background
+    btn_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    base_color = color if not is_hovered else (min(255, color[0]+30), min(255, color[1]+30), min(255, color[2]+30))
+    pygame.draw.rect(btn_surf, (*base_color, alpha), btn_surf.get_rect(), border_radius=14)
+    # Border (matches leaderboard)
+    border_color = (80, 120, 200) if color == BLUE else (200, 80, 80) if color == RED else (0, 200, 255)
+    pygame.draw.rect(btn_surf, border_color, btn_surf.get_rect(), width=2, border_radius=14)
+    WIN.blit(btn_surf, (rect.x, rect.y))
+    # Hover effect: subtle white overlay
     if is_hovered:
         hover_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(hover_surf, (255,255,255,40), hover_surf.get_rect(), border_radius=12)
+        pygame.draw.rect(hover_surf, (255,255,255,40), hover_surf.get_rect(), border_radius=14)
         WIN.blit(hover_surf, (rect.x, rect.y))
-    # Compact label: bold, slightly smaller, centered
-    label_font = pygame.font.SysFont("Arial", 24, bold=True)
-    label = label_font.render(text, True, WHITE if not is_hovered else (255,255,180))
+    # Label: bold, modern, slightly smaller
+    label_font = pygame.font.SysFont("Arial", 22, bold=True)
+    label_color = (240,240,255) if not is_hovered else (255,255,180)
+    label = label_font.render(text, True, label_color)
     WIN.blit(label, (rect.x + rect.width//2 - label.get_width()//2, rect.y + rect.height//2 - label.get_height()//2))
 
 # Sliders
@@ -536,9 +578,7 @@ while running:
         # Draw the background
         WIN.blit(menu_background, (0, 0))
 
-        # Draw the title
-        title = big_font.render("BLOCK BUSTER", True, WHITE)
-        WIN.blit(title, (WIDTH//2 - title.get_width()//2, 60))
+
 
         # Draw a card background for menu buttons
         menu_card_rect = pygame.Rect(WIDTH//2 - 140, HEIGHT//2 - 140, 280, 240)
@@ -1383,12 +1423,21 @@ while running:
         if event.type == pygame.MOUSEMOTION and dragging_slider:
             mx, _ = pygame.mouse.get_pos()
             if dragging_slider == "music":
+                old = background_music_volume
                 background_music_volume = handle_slider_movement(slider_music_rect, background_music_volume, mx)
                 pygame.mixer.music.set_volume(background_music_volume)
+                if background_music_volume != old:
+                    save_settings()
             elif dragging_slider == "shoot":
+                old = shoot_sound_volume
                 shoot_sound_volume = handle_slider_movement(slider_shoot_rect, shoot_sound_volume, mx)
+                if shoot_sound_volume != old:
+                    save_settings()
             elif dragging_slider == "hit":
+                old = hit_sound_volume
                 hit_sound_volume = handle_slider_movement(slider_hit_rect, hit_sound_volume, mx)
+                if hit_sound_volume != old:
+                    save_settings()
 
     elif game_state == "game_over":
         # Display "GAME OVER" text
