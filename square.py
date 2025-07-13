@@ -64,7 +64,7 @@ channel_fx_ui = pygame.mixer.Channel(3)
 channel_fx_powerup = pygame.mixer.Channel(4)
 
 # Sound volumes
-background_music_volume = 0.5
+background_music_volume = 0
 shoot_sound_volume = 0.5
 hit_sound_volume = 0.5
 click_sound_volume = 0.5
@@ -95,7 +95,7 @@ player = pygame.Rect(WIDTH//2 - 25, HEIGHT - 60, 50, 50)
 player_pos_x = float(player.x)
 player_pos_y = float(player.y)
 player_speed = 25
-sprint_speed = 20
+sprint_speed = 35
 shield = False
 shield_duration = 3000  # milliseconds
 shield_end_time = 0
@@ -111,14 +111,14 @@ energy_regen_rate = 0.1
 energy_drain_rate = 0.5
 
 # Dash cooldown
-dash_cooldown = 2000  # Cooldown time in milliseconds (2 seconds)
+dash_cooldown = 1200  # Reduced cooldown for more frequent dashing
 last_dash_time = 0    # Tracks the last time the player dashed
 
 import math
 # Dash animation (improved: smooth interpolation)
 dash_animation_active = False
 dash_animation_start_time = 0
-dash_animation_duration = 250  # Duration of the dash animation in milliseconds (slightly longer for smoothness)
+dash_animation_duration = 100  # Much shorter for a snappy dash
 dash_animation_max_outline = 30  # Max outline thickness
 dash_animation_min_outline = 3   # Min outline thickness
 dash_animation_max_alpha = 180   # Max alpha for the outline
@@ -134,7 +134,7 @@ last_shot_time = 0    # Tracks the last time a bullet was fired
 # Enemies
 enemies = []
 enemy_spawn_time = 1000
-enemy_speed = 4
+enemy_speed = 2  # Start slower at level 1
 last_enemy_spawn = pygame.time.get_ticks()
 
 # Enemy spawn cooldown
@@ -188,10 +188,9 @@ enemy_destroyed = False  # Flag to track if the enemy is destroyed
 enemy_destroy_start_time = 0  # Timer for the destruction effect
 enemy_destroy_duration = 2000  # Duration of the destruction effect in milliseconds
 
-# Survival mode destruction effect
-survival_enemy_pieces = []  # List to store enemy pieces
-survival_enemy_destroyed = False  # Flag to track if an enemy is destroyed
-survival_enemy_destroy_start_time = 0  # Timer for the destruction effect
+
+# Survival mode destruction effect (support multiple simultaneous explosions)
+survival_explosions = []  # Each item: {"pieces": [...], "start_time": int}
 survival_enemy_destroy_duration = 2000  # Duration of the destruction effect in milliseconds
 
 global victory_music_playing
@@ -260,7 +259,7 @@ def reset_game():
     powerups = []
     score = 0
     health = max_health
-    enemy_speed = 4
+    enemy_speed = 2  # Keep initial speed slow
     energy = max_energy
     level = 1
     enemy_spawn_time = 1000
@@ -286,28 +285,10 @@ def reset_game():
 
 # Improved Survival Enemy AI – Smarter movement, dodging, and shooting
 def move_enemy(enemy):
-    # Track player horizontally
-    dx = player.centerx - enemy.centerx
-    if abs(dx) > 5:
-        enemy.x += int(enemy_speed * (1 if dx > 0 else -1))
-    # Move down
-    enemy.y += enemy_speed
-    # Dodge bullets if any are close and on a collision course
-    for bullet in bullets:
-        if bullet.y < enemy.bottom and bullet.y > enemy.top - 100:
-            if abs(bullet.centerx - enemy.centerx) < 40:
-                # 60% chance to dodge, prefer direction with more space
-                if random.random() < 0.6:
-                    if enemy.centerx < WIDTH // 2:
-                        enemy.x += int(enemy_speed * 4)
-                    else:
-                        enemy.x -= int(enemy_speed * 4)
-                else:
-                    enemy.x += random.choice([-1, 1]) * int(enemy_speed * 4)
-                # Clamp after dodge
-                enemy.x = max(0, min(enemy.x, WIDTH - enemy.width))
+    # Simple vertical movement only, speed increases with level
+    vertical_speed = enemy_speed + (level - 1) * 0.4  # Increase speed more gradually per level
+    enemy.y += int(vertical_speed)
     # Clamp position
-    enemy.x = max(0, min(enemy.x, WIDTH - enemy.width))
     enemy.y = max(-50, min(enemy.y, HEIGHT - enemy.height))
 
 # Power-up spawn logic
@@ -467,14 +448,36 @@ while running:
         if not pause:
             keys = pygame.key.get_pressed()
 
-            # Handle dash input with cooldown
+            # Handle dash input with cooldown (buffed: longer dash, invulnerable during dash, shorter cooldown)
             current_time = pygame.time.get_ticks()
             if keys[pygame.K_LSHIFT] and current_time - last_dash_time >= dash_cooldown:
                 last_dash_time = current_time  # Update the last dash time
                 dash_animation_active = True  # Activate the dash animation
                 dash_animation_start_time = pygame.time.get_ticks()  # Record the start time
-                player.x += sprint_speed * 10 if keys[pygame.K_d] and player.right < WIDTH else 0
-                player.x -= sprint_speed * 10 if keys[pygame.K_a] and player.left > 0 else 0
+                dash_distance = 350  # Even longer dash for fast dodge
+                dash_dir = 0
+                if keys[pygame.K_d] and player.right < WIDTH:
+                    dash_dir = 1
+                elif keys[pygame.K_a] and player.left > 0:
+                    dash_dir = -1
+                if dash_dir != 0:
+                    # Make player invulnerable during dash and a bit after
+                    dash_invulnerable = True
+                    dash_invuln_extra = 180  # Extra ms of invulnerability after dash
+                    dash_end_time = current_time + dash_animation_duration + dash_invuln_extra
+                    player.x += dash_dir * dash_distance
+                    # Clamp player position
+                    player.x = max(0, min(player.x, WIDTH - player.width))
+                    # Give a short speed boost after dash
+                    dash_speed_boost = 30 * dash_dir
+                    dash_speed_boost_end = current_time + 200
+                else:
+                    dash_invulnerable = False
+
+            # End dash invulnerability after dash animation
+            if 'dash_invulnerable' in globals() and dash_invulnerable:
+                if current_time > dash_end_time:
+                    dash_invulnerable = False
 
             # Restrict movement to left and right only (smooth)
             target_x = player_pos_x
@@ -482,6 +485,12 @@ while running:
                 target_x -= player_speed
             if keys[pygame.K_d] and player.right < WIDTH:
                 target_x += player_speed
+            # Apply dash speed boost if active
+            if 'dash_speed_boost' in globals() and dash_speed_boost != 0:
+                if current_time < dash_speed_boost_end:
+                    target_x += dash_speed_boost
+                else:
+                    dash_speed_boost = 0
             # Smoothly interpolate player x
             player_pos_x += (target_x - player_pos_x) * 0.4
             # Ensure the player's y-position remains constant
@@ -510,27 +519,29 @@ while running:
 
             if current_time >= enemy_spawn_resume_time:  # Check if cooldown has elapsed
                 if current_time - last_enemy_spawn > enemy_spawn_time:
-                    for _ in range(1 + (level // 5)):
+                    # Spawn only one enemy until level 20, then increase slowly
+                    spawn_count = 1
+                    if level >= 20:
+                        spawn_count = 2
+                    if level >= 40:
+                        spawn_count = 3
+                    for _ in range(spawn_count):
                         enemy = pygame.Rect(random.randint(0, WIDTH-50), -50, 50, 50)
                         enemies.append(enemy)
                     last_enemy_spawn = current_time
 
-            # Enemy shooting logic
-            if current_time - last_enemy_shoot_time > enemy_shoot_cooldown:
-                for enemy in enemies:
-                    if random.random() < 0.3:  # 30% chance for an enemy to shoot
-                        bullet = pygame.Rect(enemy.centerx - 5, enemy.bottom, 10, 20)
-                        enemy_bullets.append(bullet)
-                last_enemy_shoot_time = current_time
+            # Enemy shooting logic removed for survival mode
 
             if game_state == "play" and not pause:
+                # During dash, make player invulnerable to enemies and bullets
+                player_is_invulnerable = 'dash_invulnerable' in globals() and dash_invulnerable
                 # Move enemy bullets
                 for bullet in enemy_bullets[:]:
                     bullet.y += enemy_bullet_speed
                     if bullet.top > HEIGHT:  # Remove bullets that go off-screen
                         enemy_bullets.remove(bullet)
                     elif bullet.colliderect(player):  # Check collision with the player
-                        if not shield:  # If the shield is not active, reduce health
+                        if not shield and not player_is_invulnerable:  # If not shielded or dashing, reduce health
                             health -= 1
                         enemy_bullets.remove(bullet)
                         if health <= 0:
@@ -539,10 +550,25 @@ while running:
                             game_state = "game_over"
 
                 # Update enemies
+
                 for enemy in enemies[:]:
                     move_enemy(enemy)
+                    # Remove enemy if it passes the bottom of the screen
+                    if enemy.top > HEIGHT:
+                        enemies.remove(enemy)
+                        continue
+                    # If shield is active, destroy only enemies overlapping the player
+                    if shield and enemy.colliderect(player):
+                        enemies.remove(enemy)
+                        score += 1
+                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                        survival_explosions.append({
+                            "pieces": create_survival_enemy_pieces(enemy),
+                            "start_time": pygame.time.get_ticks()
+                        })
+                        continue
                     if enemy.colliderect(player):
-                        if not shield:
+                        if not shield and not player_is_invulnerable:
                             health -= 1
                             enemies.remove(enemy)
                         if health <= 0:
@@ -551,30 +577,33 @@ while running:
                             game_state = "game_over"
                             break
 
+                    # Track if this enemy was hit by a bullet this frame
+                    hit_this_frame = False
                     for bullet in bullets[:]:
                         if enemy.colliderect(bullet):
                             bullets.remove(bullet)
                             enemies.remove(enemy)
                             score += 1
                             play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
-
-                            # Trigger destruction animation
-                            survival_enemy_destroyed = True
-                            survival_enemy_destroy_start_time = pygame.time.get_ticks()
-                            survival_enemy_pieces = create_survival_enemy_pieces(enemy)
+                            # Trigger destruction animation for this enemy
+                            survival_explosions.append({
+                                "pieces": create_survival_enemy_pieces(enemy),
+                                "start_time": pygame.time.get_ticks()
+                            })
+                            hit_this_frame = True
                             break
 
-                # Animate enemy pieces
-                if survival_enemy_destroyed:
-                    elapsed_time = pygame.time.get_ticks() - survival_enemy_destroy_start_time
+
+                # Animate all active enemy explosions
+                for explosion in survival_explosions[:]:
+                    elapsed_time = pygame.time.get_ticks() - explosion["start_time"]
                     if elapsed_time < survival_enemy_destroy_duration:
-                        for piece in survival_enemy_pieces:
+                        for piece in explosion["pieces"]:
                             piece["rect"].x += piece["velocity"][0]
                             piece["rect"].y += piece["velocity"][1]
                             pygame.draw.rect(WIN, RED, piece["rect"])  # Draw each piece
                     else:
-                        survival_enemy_destroyed = False  # Reset the destruction state
-                        survival_enemy_pieces = []  # Clear the pieces
+                        survival_explosions.remove(explosion)
 
                 # Deactivate shield after 5 seconds
                 if shield and pygame.time.get_ticks() > shield_end_time:
@@ -641,6 +670,14 @@ while running:
                             shield = True  # Activate shield
                             shield_end_time = pygame.time.get_ticks() + 5000  # Shield lasts for 5 seconds
                         elif powerup["type"] == "clear_enemies":
+                            # Award points and trigger explosion for each enemy cleared
+                            for enemy in enemies[:]:
+                                score += 1
+                                play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                                survival_explosions.append({
+                                    "pieces": create_survival_enemy_pieces(enemy),
+                                    "start_time": pygame.time.get_ticks()
+                                })
                             enemies.clear()  # Clear all enemies from the screen
                             enemy_bullets.clear()  # Clear all enemy bullets from the screen
                             splash_active = True  # Activate the splash effect
@@ -682,8 +719,8 @@ while running:
             new_level = score // 10 + 1
             if new_level > level:
                 level = new_level
-                enemy_speed += 0.5
-                enemy_spawn_time = max(300, enemy_spawn_time - 50)
+                enemy_speed += 0.2  # Increase speed more slowly per level
+                enemy_spawn_time = max(400, enemy_spawn_time - 20)  # Decrease spawn time more slowly
 
             if score > high_score:
                 high_score = score
