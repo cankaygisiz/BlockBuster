@@ -216,26 +216,103 @@ global victory_music_playing
 victory_music_playing = False  # Flag to track if victory music is playing
 
 
-# Centralized button definitions
+# Centralized button definitions (add leaderboard button)
+BUTTON_WIDTH = 220
+BUTTON_HEIGHT = 48
+BUTTON_SPACING = 16
 BUTTONS = {
-    "start": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 100, 200, 50),
-    "settings": pygame.Rect(WIDTH//2 - 100, HEIGHT//2, 200, 50),
-    "exit": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50),
+    # Main menu buttons
+    "start": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT*2 - BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "leaderboard": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT - BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "settings": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "exit": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 + BUTTON_HEIGHT + BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    # Mode selection (after start)
+    "survival": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT - BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "arena": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "back": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 + BUTTON_HEIGHT + BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    # Other screens
     "try_again": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 40, 200, 50),
     "menu_pause": pygame.Rect(WIDTH//2 - 55, HEIGHT//2 + 20, 110, 50),
-    "survival": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 - 60, 200, 50),
-    "arena": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50),
-    "back": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 200, 50),
     "menu_settings": pygame.Rect(WIDTH//2 - 55, HEIGHT - 100, 110, 50),
     "menu_game_over": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 20, 200, 50),
     "menu_victory": pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 50, 200, 50),
+    "menu_leaderboard": pygame.Rect(WIDTH//2 - 55, HEIGHT - 100, 110, 50),
 }
+# --- Leaderboard logic ---
+LEADERBOARD_FILE = "leaderboard.txt"
+def load_leaderboard():
+    scores = []
+    if os.path.exists(LEADERBOARD_FILE):
+        with open(LEADERBOARD_FILE, "r") as f:
+            for line in f:
+                try:
+                    score = int(line.strip())
+                    scores.append(score)
+                except:
+                    continue
+    return sorted(scores, reverse=True)[:10]
+
+def save_score(new_score):
+    scores = load_leaderboard()
+    scores.append(new_score)
+    scores = sorted(scores, reverse=True)[:10]
+    with open(LEADERBOARD_FILE, "w") as f:
+        for s in scores:
+            f.write(f"{s}\n")
+
+def draw_leaderboard():
+    WIN.blit(menu_background, (0, 0))
+    # Card background for leaderboard
+    card_rect = pygame.Rect(WIDTH//2 - 180, 60, 360, 420)
+    card_surf = pygame.Surface((card_rect.width, card_rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(card_surf, (30, 40, 60, 220), card_surf.get_rect(), border_radius=18)
+    WIN.blit(card_surf, (card_rect.x, card_rect.y))
+    # Title
+    title = big_font.render("LEADERBOARD", True, WHITE)
+    WIN.blit(title, (WIDTH//2 - title.get_width()//2, 80))
+    # Scores
+    scores = load_leaderboard()
+    if not scores:
+        no_scores = font.render("No scores yet!", True, WHITE)
+        WIN.blit(no_scores, (WIDTH//2 - no_scores.get_width()//2, 180))
+    else:
+        for i, score in enumerate(scores):
+            entry = font.render(f"{i+1}. {score}", True, (255,255,180) if i==0 else WHITE)
+            WIN.blit(entry, (WIDTH//2 - entry.get_width()//2, 160 + i*36))
+    # Menu button (bottom center, matches settings screen)
+    draw_button("MENU", BUTTONS["menu_leaderboard"], BLUE)
 
 def draw_button(text, rect, color, alpha=150):
-    button_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-    button_surface.fill((*color, alpha))
-    WIN.blit(button_surface, (rect.x, rect.y))
-    label = font.render(text, True, WHITE)
+    # Improved button: rounded corners, subtle gradient, compact, hover effect
+    mouse_pos = pygame.mouse.get_pos()
+    is_hovered = rect.collidepoint(mouse_pos)
+    base_color = color
+    # Gradient: slightly lighter at top, darker at bottom
+    grad_surface = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    for y in range(rect.height):
+        blend = y / rect.height
+        grad_color = (
+            min(255, int(base_color[0] * (1 - 0.08 * blend) + 30 * blend)),
+            min(255, int(base_color[1] * (1 - 0.08 * blend) + 30 * blend)),
+            min(255, int(base_color[2] * (1 - 0.08 * blend) + 30 * blend)),
+            alpha
+        )
+        pygame.draw.rect(grad_surface, grad_color, (0, y, rect.width, 1), border_radius=12)
+    # Draw shadow
+    shadow = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow, (0,0,0,60), shadow.get_rect(), border_radius=14)
+    WIN.blit(shadow, (rect.x+2, rect.y+4))
+    # Draw button with rounded corners
+    WIN.blit(grad_surface, (rect.x, rect.y))
+    pygame.draw.rect(WIN, (255,255,255,40), rect, 2, border_radius=12)
+    # Hover effect: brighten and scale up slightly
+    if is_hovered:
+        hover_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(hover_surf, (255,255,255,40), hover_surf.get_rect(), border_radius=12)
+        WIN.blit(hover_surf, (rect.x, rect.y))
+    # Compact label: bold, slightly smaller, centered
+    label_font = pygame.font.SysFont("Arial", 24, bold=True)
+    label = label_font.render(text, True, WHITE if not is_hovered else (255,255,180))
     WIN.blit(label, (rect.x + rect.width//2 - label.get_width()//2, rect.y + rect.height//2 - label.get_height()//2))
 
 # Sliders
@@ -363,6 +440,9 @@ while running:
                     if BUTTONS["start"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pause = True  # Show game mode selection
+                    elif BUTTONS["leaderboard"].collidepoint(mx, my):
+                        play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                        game_state = "leaderboard"
                     elif BUTTONS["settings"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         game_state = "settings"
@@ -396,6 +476,8 @@ while running:
                     game_state = "play"
                 elif BUTTONS["menu_game_over"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                    # Save score to leaderboard
+                    save_score(score)
                     reset_game()
                     play_background_music()  # Restart background music
                     pause = False  # Reset pause state
@@ -404,6 +486,8 @@ while running:
             if pause:  # Handle "MENU" button in pause menu
                 if BUTTONS["menu_pause"].collidepoint(mx, my):
                     play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                    # Save score to leaderboard
+                    save_score(score)
                     reset_game()
                     pause = False  # Reset pause state
                     game_state = "menu"
@@ -453,17 +537,32 @@ while running:
         WIN.blit(menu_background, (0, 0))
 
         # Draw the title
-        title = big_font.render(" ", True, WHITE)
-        WIN.blit(title, (WIDTH//2 - title.get_width()//2, 100))
-        
+        title = big_font.render("BLOCK BUSTER", True, WHITE)
+        WIN.blit(title, (WIDTH//2 - title.get_width()//2, 60))
+
+        # Draw a card background for menu buttons
+        menu_card_rect = pygame.Rect(WIDTH//2 - 140, HEIGHT//2 - 140, 280, 240)
+        menu_card_surf = pygame.Surface((menu_card_rect.width, menu_card_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(menu_card_surf, (30, 40, 60, 200), menu_card_surf.get_rect(), border_radius=16)
+        WIN.blit(menu_card_surf, (menu_card_rect.x, menu_card_rect.y))
+
         if not pause:  # Show the main menu buttons
-            draw_button("START", BUTTONS["start"], BLUE, alpha=150)
-            draw_button("SETTINGS", BUTTONS["settings"], BLUE, alpha=150)
-            draw_button("EXIT", BUTTONS["exit"], RED, alpha=150)
-        else:  # Show the game mode selection buttons
-            draw_button("SURVIVAL", BUTTONS["survival"], BLUE, alpha=150)
-            draw_button("ARENA", BUTTONS["arena"], BLUE, alpha=150)
-            draw_button("BACK", BUTTONS["back"], RED, alpha=150)
+            draw_button("START", BUTTONS["start"], BLUE, alpha=180)
+            draw_button("LEADERBOARD", BUTTONS["leaderboard"], (0, 200, 255), alpha=180)
+            draw_button("SETTINGS", BUTTONS["settings"], BLUE, alpha=180)
+            draw_button("EXIT", BUTTONS["exit"], RED, alpha=180)
+        else:  # Show the game mode selection buttons (same layout/size as main menu)
+            draw_button("SURVIVAL", BUTTONS["survival"], BLUE, alpha=180)
+            draw_button("ARENA", BUTTONS["arena"], BLUE, alpha=180)
+            draw_button("BACK", BUTTONS["back"], RED, alpha=180)
+    elif game_state == "leaderboard":
+        draw_leaderboard()
+        # Handle menu button (bottom center, matches settings screen)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = pygame.mouse.get_pos()
+            if BUTTONS["menu_leaderboard"].collidepoint(mx, my):
+                play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                game_state = "menu"
 
     elif game_state == "play":
         if not pause:
