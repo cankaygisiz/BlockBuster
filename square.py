@@ -259,7 +259,8 @@ BUTTONS = {
     "start": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT*2 - BUTTON_SPACING, BUTTON_WIDTH, BUTTON_HEIGHT),
     "leaderboard": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT - BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
     "settings": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2, BUTTON_WIDTH, BUTTON_HEIGHT),
-    "exit": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 + BUTTON_HEIGHT + BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "help": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 + BUTTON_HEIGHT + BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
+    "exit": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 + (BUTTON_HEIGHT + BUTTON_SPACING//2)*2, BUTTON_WIDTH, BUTTON_HEIGHT),
     # Mode selection (after start)
     "survival": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2 - BUTTON_HEIGHT - BUTTON_SPACING//2, BUTTON_WIDTH, BUTTON_HEIGHT),
     "arena": pygame.Rect(WIDTH//2 - BUTTON_WIDTH//2, HEIGHT//2, BUTTON_WIDTH, BUTTON_HEIGHT),
@@ -515,6 +516,13 @@ while running:
     WIN.fill(BLACK)
     current_time = pygame.time.get_ticks()
 
+
+    # --- Scrollable help card state ---
+    if 'help_scroll_offset' not in globals():
+        help_scroll_offset = 0
+    help_scroll_step = 28  # pixels per scroll
+    help_max_scroll = 0  # will be set in help state
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -524,9 +532,22 @@ while running:
                 # Toggle pause for "play" and "arena" game states
                 if game_state in ["play", "arena"]:
                     pause = not pause
+            # Scroll help card with up/down keys
+            if game_state == "help":
+                if event.key == pygame.K_DOWN:
+                    help_scroll_offset = min(help_scroll_offset + help_scroll_step, help_max_scroll)
+                elif event.key == pygame.K_UP:
+                    help_scroll_offset = max(help_scroll_offset - help_scroll_step, 0)
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = pygame.mouse.get_pos()
+
+            # Mouse wheel scroll for help card
+            if game_state == "help":
+                if event.button == 4:  # Scroll up
+                    help_scroll_offset = max(help_scroll_offset - help_scroll_step, 0)
+                elif event.button == 5:  # Scroll down
+                    help_scroll_offset = min(help_scroll_offset + help_scroll_step, help_max_scroll)
 
             if game_state == "menu":
                 if not pause:  # Handle main menu buttons
@@ -539,6 +560,10 @@ while running:
                     elif BUTTONS["settings"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         game_state = "settings"
+                    elif BUTTONS["help"].collidepoint(mx, my):
+                        play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                        game_state = "help"
+                        help_scroll_offset = 0  # Reset scroll when opening help
                     elif BUTTONS["exit"].collidepoint(mx, my):
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pygame.quit()
@@ -621,6 +646,7 @@ while running:
             draw_button("START", BUTTONS["start"], BLUE, alpha=180)
             draw_button("LEADERBOARD", BUTTONS["leaderboard"], (0, 200, 255), alpha=180)
             draw_button("SETTINGS", BUTTONS["settings"], BLUE, alpha=180)
+            draw_button("HELP", BUTTONS["help"], (100, 180, 255), alpha=180)
             draw_button("EXIT", BUTTONS["exit"], RED, alpha=180)
         else:  # Show the game mode selection buttons (same layout/size as main menu)
             draw_button("SURVIVAL", BUTTONS["survival"], BLUE, alpha=180)
@@ -632,6 +658,170 @@ while running:
         if event.type == pygame.MOUSEBUTTONDOWN:
             mx, my = pygame.mouse.get_pos()
             if BUTTONS["menu_leaderboard"].collidepoint(mx, my):
+                play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                game_state = "menu"
+
+    elif game_state == "help":
+        # Draw the menu background image (same as menu)
+        WIN.blit(menu_background, (0, 0))
+
+        # Card style for help screen
+        card_width, card_height = 540, 480
+        card_x = WIDTH // 2 - card_width // 2
+        card_y = HEIGHT // 2 - card_height // 2
+        shadow_offset = 10
+        # Drop shadow
+        shadow_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow_surf, (0, 0, 0, 120), shadow_surf.get_rect(), border_radius=22)
+        WIN.blit(shadow_surf, (card_x + shadow_offset, card_y + shadow_offset))
+        # Card
+        card_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+        pygame.draw.rect(card_surf, (30, 40, 60, 235), card_surf.get_rect(), border_radius=22)
+        pygame.draw.rect(card_surf, (30, 40, 60, 235), card_surf.get_rect(), width=2, border_radius=22)
+        WIN.blit(card_surf, (card_x, card_y))
+
+        # Title
+        help_title_font = pygame.font.SysFont("arial", 38, bold=True)
+        title = help_title_font.render("HELP & CONTROLS", True, (200,220,255))
+        WIN.blit(title, (WIDTH//2 - title.get_width()//2, card_y + 28))
+
+        # Help text with word wrapping
+        help_font = pygame.font.SysFont("arial", 22)
+        help_lines = [
+            "Controls:",
+            "  - Move: A/D (left/right), W/S (up/down in Arena)",
+            "  - Shoot: SPACEBAR",
+            "  - Sprint: Hold LSHIFT (Survival)",
+            "  - Dash: LSHIFT (Arena, with cooldown)",
+            "  - Pause: ESC",
+            "",
+            "Abilities & Power-ups:",
+            "  - Health: Restores 1 HP",
+            "  - Shield: Temporary invincibility",
+            "  - Clear Enemies: Destroys all enemies on screen",
+            "  - Double Gun: Shoot 2 bullets at once",
+            "  - Triple Gun: Shoot 3 bullets at once",
+            "  - Rapid Gun: Faster shooting",
+            "  - Piercing Gun: Bullets pass through enemies",
+            "",
+            "Survival Mode:",
+            "  - Survive waves, collect power-ups, defeat the boss!",
+            "",
+            "Arena Mode:",
+            "  - 1v1 duel, use dashes and upgrades to win!",
+            "",
+            "Press the MENU button below to return."
+        ]
+        y_start = card_y + 80
+        line_height = 28
+        # Word wrap helper
+        def wrap_text(text, font, max_width):
+            words = text.split(' ')
+            lines = []
+            current = ''
+            for word in words:
+                test = current + (' ' if current else '') + word
+                if font.size(test)[0] <= max_width:
+                    current = test
+                else:
+                    if current:
+                        lines.append(current)
+                    current = word
+            if current:
+                lines.append(current)
+            return lines if lines else ['']
+
+        # Prepare wrapped lines
+        text_area_padding_left = 36
+        text_area_padding_right = 36  # leave space for slider and some gap
+        text_area_width = card_width - text_area_padding_left - text_area_padding_right - 12  # 12px for slider
+        wrapped_lines = []
+        for line in help_lines:
+            if line.strip() == '':
+                wrapped_lines.append('')
+            else:
+                color = (220, 230, 255) if line.strip() else (200, 220, 255)
+                for wrapped in wrap_text(line, help_font, text_area_width):
+                    wrapped_lines.append((wrapped, color))
+
+        # Calculate total text height and max scroll
+        extra_bottom_space = 40  # Extra space at bottom so last text isn't blocked by button
+        total_text_height = len(wrapped_lines) * line_height + extra_bottom_space
+        visible_height = card_height - 120  # leave space for title and button
+        help_max_scroll = max(0, total_text_height - visible_height)
+        # Clip the text area to the card, leaving space for the vertical slider
+        text_clip_rect = pygame.Rect(card_x + text_area_padding_left, y_start, text_area_width, visible_height)
+        WIN.set_clip(text_clip_rect)
+        y = y_start - help_scroll_offset
+        for entry in wrapped_lines:
+            if entry == '':
+                y += line_height
+                continue
+            text, color = entry
+            # Only render if within visible area
+            if y + line_height > y_start and y < y_start + visible_height:
+                surf = help_font.render(text, True, color)
+                WIN.blit(surf, (card_x + text_area_padding_left, y))
+            y += line_height
+        WIN.set_clip(None)
+
+        # --- Vertical scroll bar ---
+        scrollbar_x = card_x + card_width - 24
+        scrollbar_y = y_start
+        scrollbar_width = 12
+        scrollbar_height = visible_height
+        # Draw scrollbar track
+        pygame.draw.rect(WIN, (60, 80, 120), (scrollbar_x, scrollbar_y, scrollbar_width, scrollbar_height), border_radius=6)
+        # Thumb size: proportional to visible/total
+        if total_text_height > 0:
+            thumb_height = max(40, int(visible_height * visible_height / total_text_height))
+        else:
+            thumb_height = visible_height
+        # Thumb position: proportional to scroll offset
+        if help_max_scroll > 0:
+            thumb_y = scrollbar_y + int((help_scroll_offset / help_max_scroll) * (scrollbar_height - thumb_height))
+        else:
+            thumb_y = scrollbar_y
+        thumb_rect = pygame.Rect(scrollbar_x, thumb_y, scrollbar_width, thumb_height)
+        # Draw thumb
+        pygame.draw.rect(WIN, (120, 180, 255), thumb_rect, border_radius=6)
+        # Draw thumb border
+        pygame.draw.rect(WIN, (200, 220, 255), thumb_rect, width=2, border_radius=6)
+
+        # Handle dragging the scrollbar thumb
+        if 'help_dragging_scrollbar' not in globals():
+            help_dragging_scrollbar = False
+        if 'help_drag_offset' not in globals():
+            help_drag_offset = 0
+
+        # Mouse events for scrollbar (handled in event loop)
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = pygame.mouse.get_pos()
+            if thumb_rect.collidepoint(mx, my):
+                help_dragging_scrollbar = True
+                help_drag_offset = my - thumb_y
+            elif pygame.Rect(scrollbar_x, scrollbar_y, scrollbar_width, scrollbar_height).collidepoint(mx, my):
+                # Click on track: jump thumb to mouse
+                rel_y = my - scrollbar_y - thumb_height // 2
+                rel_y = max(0, min(rel_y, scrollbar_height - thumb_height))
+                help_scroll_offset = int((rel_y / (scrollbar_height - thumb_height)) * help_max_scroll)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            help_dragging_scrollbar = False
+        elif event.type == pygame.MOUSEMOTION and help_dragging_scrollbar:
+            mx, my = pygame.mouse.get_pos()
+            rel_y = my - scrollbar_y - help_drag_offset
+            rel_y = max(0, min(rel_y, scrollbar_height - thumb_height))
+            help_scroll_offset = int((rel_y / (scrollbar_height - thumb_height)) * help_max_scroll)
+            help_scroll_offset = max(0, min(help_scroll_offset, help_max_scroll))
+
+        # Draw the menu button at the bottom of the card
+        menu_btn_rect = pygame.Rect(WIDTH//2 - 55, card_y + card_height - 70, 110, 50)
+        draw_button("MENU", menu_btn_rect, BLUE)
+
+        # Handle menu button click
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mx, my = pygame.mouse.get_pos()
+            if menu_btn_rect.collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
                 game_state = "menu"
 
