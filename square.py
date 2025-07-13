@@ -371,11 +371,68 @@ slider_hit_rect = pygame.Rect(slider_x, slider_y_hit, slider_width, slider_heigh
 
 # Slider logic
 def draw_slider(rect, volume):
-    pygame.draw.rect(WIN, WHITE, rect)
-    pygame.draw.rect(WIN, GREEN, (rect.x, rect.y, volume * rect.width, rect.height))
+    # Draw drop shadow
+    shadow_offset = 4
+    shadow_rect = pygame.Rect(rect.x + shadow_offset, rect.y + shadow_offset, rect.width, rect.height)
+    shadow_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow_surf, (0,0,0,70), shadow_surf.get_rect(), border_radius=8)
+    WIN.blit(shadow_surf, (shadow_rect.x, shadow_rect.y))
+
+    # Draw track (background)
+    track_color = (40, 50, 70)
+    pygame.draw.rect(WIN, track_color, rect, border_radius=8)
+
+    # Draw filled portion (active volume)
+    fill_color = (0, 200, 255)
+    fill_rect = pygame.Rect(rect.x, rect.y, int(volume * rect.width), rect.height)
+    pygame.draw.rect(WIN, fill_color, fill_rect, border_radius=8)
+
+    # Draw border
+    pygame.draw.rect(WIN, (200,220,255), rect, width=2, border_radius=8)
+
+    # Draw thumb (handle) as a modern pill/rounded-rect with gradient and shadow
+    thumb_width = max(rect.height * 2, 32)
+    thumb_height = rect.height * 2 + 4
+    thumb_x = int(rect.x + volume * rect.width - thumb_width // 2)
+    thumb_y = rect.y + rect.height // 2 - thumb_height // 2
+    # Thumb shadow
+    thumb_shadow = pygame.Surface((thumb_width+8, thumb_height+8), pygame.SRCALPHA)
+    pygame.draw.rect(thumb_shadow, (0,0,0,80), (4,4,thumb_width,thumb_height), border_radius=thumb_height//2)
+    WIN.blit(thumb_shadow, (thumb_x, thumb_y))
+    # Thumb gradient
+    thumb_surf = pygame.Surface((thumb_width, thumb_height), pygame.SRCALPHA)
+    for i in range(thumb_height):
+        color = (
+            220 - i*2,
+            240 - i*2,
+            255,
+            255
+        )
+        pygame.draw.rect(thumb_surf, color, (0, i, thumb_width, 1), border_radius=thumb_height//2)
+    # Thumb border
+    pygame.draw.rect(thumb_surf, (0,200,255), thumb_surf.get_rect(), width=2, border_radius=thumb_height//2)
+    WIN.blit(thumb_surf, (thumb_x, thumb_y))
+    # Thumb highlight
+    highlight = pygame.Surface((thumb_width, thumb_height//2), pygame.SRCALPHA)
+    pygame.draw.ellipse(highlight, (255,255,255,60), highlight.get_rect())
+    WIN.blit(highlight, (thumb_x, thumb_y))
+    # Thumb glow
+    glow_surf = pygame.Surface((thumb_width+12, thumb_height+12), pygame.SRCALPHA)
+    pygame.draw.ellipse(glow_surf, (0,200,255,40), glow_surf.get_rect())
+    WIN.blit(glow_surf, (thumb_x-6, thumb_y-6), special_flags=pygame.BLEND_RGBA_ADD)
+    # Store the hitbox for the thumb for use in event handling (optional, for future use)
+    global slider_thumb_hitbox
+    slider_thumb_hitbox = pygame.Rect(thumb_x-8, thumb_y-8, thumb_width+16, thumb_height+16)
 
 def handle_slider_movement(rect, volume, mouse_x):
-    if rect.collidepoint(mouse_x, pygame.mouse.get_pos()[1]):
+    # Allow dragging if mouse is on the track or within a larger thumb hitbox
+    mouse_y = pygame.mouse.get_pos()[1]
+    # Use a larger hitbox for the thumb for easier interaction
+    thumb_radius = rect.height // 2 + 6
+    thumb_x = int(rect.x + volume * rect.width)
+    thumb_y = rect.y + rect.height // 2
+    thumb_hitbox = pygame.Rect(thumb_x - thumb_radius - 8, thumb_y - thumb_radius - 8, (thumb_radius + 8) * 2, (thumb_radius + 8) * 2)
+    if rect.collidepoint(mouse_x, mouse_y) or thumb_hitbox.collidepoint(mouse_x, mouse_y):
         new_volume = (mouse_x - rect.x) / rect.width
         return max(0, min(new_volume, 1))
     return volume
