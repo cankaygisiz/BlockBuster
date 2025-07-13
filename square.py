@@ -64,7 +64,7 @@ channel_fx_ui = pygame.mixer.Channel(3)
 channel_fx_powerup = pygame.mixer.Channel(4)
 
 # Sound volumes
-background_music_volume = 0
+background_music_volume = 0.1
 shoot_sound_volume = 0.5
 hit_sound_volume = 0.5
 click_sound_volume = 0.5
