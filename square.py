@@ -580,11 +580,7 @@ while running:
 
 
 
-        # Draw a card background for menu buttons
-        menu_card_rect = pygame.Rect(WIDTH//2 - 140, HEIGHT//2 - 140, 280, 240)
-        menu_card_surf = pygame.Surface((menu_card_rect.width, menu_card_rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(menu_card_surf, (30, 40, 60, 200), menu_card_surf.get_rect(), border_radius=16)
-        WIN.blit(menu_card_surf, (menu_card_rect.x, menu_card_rect.y))
+        # Removed menu card background for a cleaner look
 
         if not pause:  # Show the main menu buttons
             draw_button("START", BUTTONS["start"], BLUE, alpha=180)
@@ -1382,27 +1378,60 @@ while running:
                 victory_music_playing = False  # Reset the flag
                 game_state = "menu"  # Return to the main menu
 
+
     elif game_state == "settings":
-        title = big_font.render("Settings", True, WHITE)
-        WIN.blit(title, (WIDTH//2 - title.get_width()//2, 100))
+        # Draw the menu background image (same as menu)
+        WIN.blit(menu_background, (0, 0))
+
+        # Card style matches leaderboard: larger, more padding
+        card_width, card_height = 480, 380
+        card_x = WIDTH // 2 - card_width // 2
+        card_y = HEIGHT // 2 - card_height // 2
+        shadow_offset = 10
+        # Drop shadow
+        shadow_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow_surf, (0, 0, 0, 120), shadow_surf.get_rect(), border_radius=22)
+        WIN.blit(shadow_surf, (card_x + shadow_offset, card_y + shadow_offset))
+        # Card
+        card_surf = pygame.Surface((card_width, card_height), pygame.SRCALPHA)
+        pygame.draw.rect(card_surf, (30, 40, 60, 235), card_surf.get_rect(), border_radius=22)
+        # Draw border (2px, same as leaderboard)
+        pygame.draw.rect(card_surf, (30, 40, 60, 235), card_surf.get_rect(), width=2, border_radius=22)
+        WIN.blit(card_surf, (card_x, card_y))
+
+        # Use slightly smaller font for title and labels for best fit
+        settings_title_font = pygame.font.SysFont("arial", 38, bold=True)
+        settings_label_font = pygame.font.SysFont("arial", 24)
+
+        # Draw the title inside the card
+        title = settings_title_font.render("SETTINGS", True, (200,220,255))
+        WIN.blit(title, (WIDTH//2 - title.get_width()//2, card_y + 28))
 
         # Add labels for each slider
-        music_label = font.render("Music Volume", True, WHITE)
-        shoot_label = font.render("Shoot Volume", True, WHITE)
-        hit_label = font.render("Hit Volume", True, WHITE)
+        music_label = settings_label_font.render("Music Volume", True, WHITE)
+        shoot_label = settings_label_font.render("Shoot Volume", True, WHITE)
+        hit_label = settings_label_font.render("Hit Volume", True, WHITE)
 
-        # Position the labels above the sliders
-        WIN.blit(music_label, (slider_music_rect.x, slider_music_rect.y - 30))
-        WIN.blit(shoot_label, (slider_shoot_rect.x, slider_shoot_rect.y - 30))
-        WIN.blit(hit_label, (slider_hit_rect.x, slider_hit_rect.y - 30))
+        # Position the labels above the sliders (inside the card)
+        label_x = card_x + 44
+        WIN.blit(music_label, (label_x, card_y + 90))
+        WIN.blit(shoot_label, (label_x, card_y + 150))
+        WIN.blit(hit_label, (label_x, card_y + 210))
+
+        # Adjust slider positions to fit inside the card
+        slider_x = card_x + 210
+        slider_music_rect = pygame.Rect(slider_x, card_y + 98, slider_width, slider_height)
+        slider_shoot_rect = pygame.Rect(slider_x, card_y + 158, slider_width, slider_height)
+        slider_hit_rect = pygame.Rect(slider_x, card_y + 218, slider_width, slider_height)
 
         # Draw the sliders
         draw_slider(slider_music_rect, background_music_volume)
         draw_slider(slider_shoot_rect, shoot_sound_volume)
         draw_slider(slider_hit_rect, hit_sound_volume)
 
-        # Draw the menu button
-        draw_button("MENU", BUTTONS["menu_settings"], BLUE)
+        # Draw the menu button at the bottom of the card
+        menu_btn_rect = pygame.Rect(WIDTH//2 - 55, card_y + card_height - 70, 110, 50)
+        draw_button("MENU", menu_btn_rect, BLUE)
 
         # Handle slider interaction
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -1413,7 +1442,7 @@ while running:
                 dragging_slider = "shoot"
             elif slider_hit_rect.collidepoint(mx, my):
                 dragging_slider = "hit"
-            elif BUTTONS["menu_settings"].collidepoint(mx, my):  # Handle "MENU" button click
+            elif menu_btn_rect.collidepoint(mx, my):  # Handle "MENU" button click
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
                 game_state = "menu"
 
@@ -1461,12 +1490,14 @@ while running:
             mx, my = pygame.mouse.get_pos()
             if try_again_button.collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                save_score(score)  # Save score before resetting
                 reset_game()
                 play_background_music()  # Restart background music
                 pause = False  # Reset pause state
                 game_state = "play"
             elif menu_button_game_over.collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
+                save_score(score)  # Save score before resetting
                 reset_game()
                 play_background_music()  # Restart background music
                 pause = False  # Reset pause state
