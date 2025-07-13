@@ -322,7 +322,7 @@ def draw_leaderboard():
         no_scores = score_font.render("No scores yet!", True, (220,220,220))
         WIN.blit(no_scores, (WIDTH//2 - no_scores.get_width()//2, y_start + 2*line_height))
     else:
-        for i, score in enumerate(scores):
+        for i, score in enumerate(scores[:10]):
             color = (255, 230, 120) if i==0 else (220, 220, 220) if i<3 else (180, 200, 255)
             entry = score_font.render(f"{i+1}. {score}", True, color)
             WIN.blit(entry, (WIDTH//2 - entry.get_width()//2, y_start + i*line_height))
@@ -453,13 +453,21 @@ def create_survival_enemy_pieces(enemy_rect, piece_size=10):
 
 # Game loop
 running = True
+
 dragging_slider = None
+# Track if score has been saved for this game over session
+score_saved_this_gameover = False
 play_background_music()
 
 print(f"Music busy: {pygame.mixer.music.get_busy()}")  # Check if music is playing
 print(f"Music volume: {pygame.mixer.music.get_volume()}")  # Check the current volume
 
 while running:
+
+    # Reset the score_saved_this_gameover flag when not in game_over state
+    if game_state != "game_over":
+        score_saved_this_gameover = False
+
     clock.tick(FPS)
     WIN.fill(BLACK)
     current_time = pygame.time.get_ticks()
@@ -508,22 +516,6 @@ while running:
                     elif BUTTONS["back"].collidepoint(mx, my):  # Handle "Back" button click
                         play_fx(click_sound, channel_fx_ui, click_sound_volume)
                         pause = False  # Return to the main menu
-
-            elif game_state == "game_over":
-                if BUTTONS["try_again"].collidepoint(mx, my):
-                    play_fx(click_sound, channel_fx_ui, click_sound_volume)
-                    reset_game()
-                    play_background_music()  # Restart background music
-                    pause = False  # Reset pause state
-                    game_state = "play"
-                elif BUTTONS["menu_game_over"].collidepoint(mx, my):
-                    play_fx(click_sound, channel_fx_ui, click_sound_volume)
-                    # Save score to leaderboard
-                    save_score(score)
-                    reset_game()
-                    play_background_music()  # Restart background music
-                    pause = False  # Reset pause state
-                    game_state = "menu"
 
             if pause:  # Handle "MENU" button in pause menu
                 if BUTTONS["menu_pause"].collidepoint(mx, my):
@@ -1490,14 +1482,14 @@ while running:
             mx, my = pygame.mouse.get_pos()
             if try_again_button.collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
-                save_score(score)  # Save score before resetting
+                save_score(score)  # Always save score before resetting
                 reset_game()
                 play_background_music()  # Restart background music
                 pause = False  # Reset pause state
                 game_state = "play"
             elif menu_button_game_over.collidepoint(mx, my):
                 play_fx(click_sound, channel_fx_ui, click_sound_volume)
-                save_score(score)  # Save score before resetting
+                save_score(score)  # Always save score before resetting
                 reset_game()
                 play_background_music()  # Restart background music
                 pause = False  # Reset pause state
