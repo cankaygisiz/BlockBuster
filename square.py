@@ -786,9 +786,11 @@ while running:
                     if enemy.colliderect(player):
                         if not shield and not sprinting:
                             health -= 1
-                            enemies.remove(enemy)
+                            if enemy in enemies:
+                                enemies.remove(enemy)
                         elif sprinting:
-                            enemies.remove(enemy)
+                            if enemy in enemies:
+                                enemies.remove(enemy)
                         if health <= 0:
                             pygame.mixer.music.stop()
                             play_fx(game_over_sound, channel_fx_hit, hit_sound_volume)
@@ -800,16 +802,17 @@ while running:
                     for bullet in bullets[:]:
                         if enemy.colliderect(bullet['rect']):
                             bullets.remove(bullet)
-                            enemies.remove(enemy)
-                            score += 1
-                            play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
-                            # Trigger destruction animation for this enemy
-                            survival_explosions.append({
-                                "pieces": create_survival_enemy_pieces(enemy),
-                                "start_time": pygame.time.get_ticks()
-                            })
-                            hit_this_frame = True
-                            break
+                            if enemy in enemies:
+                                enemies.remove(enemy)
+                                score += 1
+                                play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                                # Trigger destruction animation for this enemy
+                                survival_explosions.append({
+                                    "pieces": create_survival_enemy_pieces(enemy),
+                                    "start_time": pygame.time.get_ticks()
+                                })
+                                hit_this_frame = True
+                                break
 
 
                 # Animate all active enemy explosions
