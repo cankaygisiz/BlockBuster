@@ -1,3 +1,0 @@
-([('square',
-   '/Users/cankaygisiz/Desktop/VS Code/BlockBuster/dist/square',
-   'EXECUTABLE')],)
