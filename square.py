@@ -107,8 +107,9 @@ shield_animation_growth = 2   # Growth rate of the shield animation
 # Sprint
 energy = 100
 max_energy = 100
-energy_regen_rate = 0.1
-energy_drain_rate = 0.5
+energy_drain_rate = 3.0  # Much faster drain for sprint
+energy_cooldown = 5000   # 5 seconds cooldown before instant refill
+energy_depleted_time = 0
 
 # Dash cooldown
 dash_cooldown = 1200  # Reduced cooldown for more frequent dashing
@@ -131,11 +132,22 @@ bullet_speed = 15  # Player bullet speed
 shoot_cooldown = 300  # Cooldown time in milliseconds
 last_shot_time = 0    # Tracks the last time a bullet was fired
 
+
 # Enemies
 enemies = []
 enemy_spawn_time = 1000
 enemy_speed = 2  # Start slower at level 1
 last_enemy_spawn = pygame.time.get_ticks()
+
+# Boss variables
+boss_active = False
+boss = None
+boss_health = 100
+boss_max_health = 100
+boss_attack_cooldown = 1000
+boss_last_attack = 0
+boss_bullets = []
+boss_entry_y = 60
 
 # Enemy spawn cooldown
 enemy_spawn_cooldown = 2000  # Cooldown time in milliseconds (1 second)
@@ -147,10 +159,17 @@ enemy_bullet_speed = 12  # Enemy bullet speed
 enemy_shoot_cooldown = 1000  # Cooldown time in milliseconds
 last_enemy_shoot_time = 0    # Tracks the last time an enemy shot
 
+
 # Power-ups
 powerups = []
 powerup_spawn_time = 5000
 last_powerup_spawn = pygame.time.get_ticks()
+
+# Gun upgrade system
+GUN_UPGRADE_DURATION = 8000  # 8 seconds duration for upgrades
+rapid_fire_cooldown = 100  # ms, for rapid fire
+# Store upgrades as a dict: {upgrade_name: expiration_time}
+gun_upgrades = {}
 
 # Score & health
 score = 0
@@ -293,7 +312,9 @@ def move_enemy(enemy):
 
 # Power-up spawn logic
 def spawn_powerup():
-    powerup_type = random.choice(["health", "shield", "clear_enemies"])  # Added new types
+    # Add new gun upgrade power-ups
+    powerup_types = ["health", "shield", "clear_enemies", "double_gun", "triple_gun", "rapid_gun", "piercing_gun"]
+    powerup_type = random.choice(powerup_types)
     powerup = {"type": powerup_type, "rect": pygame.Rect(random.randint(0, WIDTH-50), -50, 50, 50)}
     powerups.append(powerup)
 
@@ -448,49 +469,42 @@ while running:
         if not pause:
             keys = pygame.key.get_pressed()
 
-            # Handle dash input with cooldown (buffed: longer dash, invulnerable during dash, shorter cooldown)
+            # Sprint logic: hold LSHIFT to move faster while energy > 0
             current_time = pygame.time.get_ticks()
-            if keys[pygame.K_LSHIFT] and current_time - last_dash_time >= dash_cooldown:
-                last_dash_time = current_time  # Update the last dash time
-                dash_animation_active = True  # Activate the dash animation
-                dash_animation_start_time = pygame.time.get_ticks()  # Record the start time
-                dash_distance = 350  # Even longer dash for fast dodge
-                dash_dir = 0
-                if keys[pygame.K_d] and player.right < WIDTH:
-                    dash_dir = 1
-                elif keys[pygame.K_a] and player.left > 0:
-                    dash_dir = -1
-                if dash_dir != 0:
-                    # Make player invulnerable during dash and a bit after
-                    dash_invulnerable = True
-                    dash_invuln_extra = 180  # Extra ms of invulnerability after dash
-                    dash_end_time = current_time + dash_animation_duration + dash_invuln_extra
-                    player.x += dash_dir * dash_distance
-                    # Clamp player position
-                    player.x = max(0, min(player.x, WIDTH - player.width))
-                    # Give a short speed boost after dash
-                    dash_speed_boost = 30 * dash_dir
-                    dash_speed_boost_end = current_time + 200
-                else:
-                    dash_invulnerable = False
+            sprinting = False
+            if keys[pygame.K_LSHIFT] and energy > 0:
+                sprinting = True
+                player_speed_actual = sprint_speed
+                energy -= energy_drain_rate
+                if energy <= 0:
+                    energy = 0
+                    energy_depleted_time = current_time
+            else:
+                player_speed_actual = player_speed
 
-            # End dash invulnerability after dash animation
-            if 'dash_invulnerable' in globals() and dash_invulnerable:
-                if current_time > dash_end_time:
-                    dash_invulnerable = False
+            # Sprinting effect: store previous positions for trail
+            if 'sprint_trail' not in globals():
+                sprint_trail = []
+            if sprinting:
+                sprint_trail.append((player.x, player.y))
+                if len(sprint_trail) > 10:
+                    sprint_trail = sprint_trail[-10:]
+            else:
+                sprint_trail = []
 
-            # Restrict movement to left and right only (smooth)
+            # Energy only recharges after full depletion and cooldown (5s countdown, then instant refill)
+            if energy < max_energy:
+                if energy == 0:
+                    # Only refill after cooldown
+                    if current_time - energy_depleted_time >= energy_cooldown:
+                        energy = max_energy
+
+            # Restrict movement to left and right only (smooth), use sprint speed if sprinting
             target_x = player_pos_x
             if keys[pygame.K_a] and player.left > 0:
-                target_x -= player_speed
+                target_x -= player_speed_actual
             if keys[pygame.K_d] and player.right < WIDTH:
-                target_x += player_speed
-            # Apply dash speed boost if active
-            if 'dash_speed_boost' in globals() and dash_speed_boost != 0:
-                if current_time < dash_speed_boost_end:
-                    target_x += dash_speed_boost
-                else:
-                    dash_speed_boost = 0
+                target_x += player_speed_actual
             # Smoothly interpolate player x
             player_pos_x += (target_x - player_pos_x) * 0.4
             # Ensure the player's y-position remains constant
@@ -498,50 +512,82 @@ while running:
             player.x = int(player_pos_x)
             player.y = int(player_pos_y)
 
-            # Handle shooting with cooldown
+            # Handle gun upgrade expiration (combinable)
+            now = pygame.time.get_ticks()
+            expired = [k for k, v in gun_upgrades.items() if now > v]
+            for k in expired:
+                del gun_upgrades[k]
+
+            # Handle shooting with combinable upgrades
             if keys[pygame.K_SPACE]:
                 current_time = pygame.time.get_ticks()
-                if current_time - last_shot_time >= shoot_cooldown:  # Check if cooldown has elapsed
-                    bullet = pygame.Rect(player.centerx - 5, player.y, 10, 20)
-                    bullets.append(bullet)
+                upgrades = set(gun_upgrades.keys())
+                cooldown = rapid_fire_cooldown if 'rapid' in upgrades else shoot_cooldown
+                if current_time - last_shot_time >= cooldown:
+                    # Determine bullet pattern
+                    bullet_defs = []
+                    if 'triple' in upgrades:
+                        # Wider spread for triple shot (shotgun style)
+                        bullet_defs = [player.centerx - 30, player.centerx, player.centerx + 30]
+                    elif 'double' in upgrades:
+                        # Wider gap for double shot (shotgun style)
+                        bullet_defs = [player.centerx - 22, player.centerx + 22]
+                    else:
+                        bullet_defs = [player.centerx]
+                    for bx in bullet_defs:
+                        bullet = {'rect': pygame.Rect(bx, player.y, 10, 20), 'piercing': 'piercing' in upgrades}
+                        bullets.append(bullet)
                     play_fx(shoot_sound, channel_fx_shoot, shoot_sound_volume)
-                    last_shot_time = current_time  # Update the last shot time
+                    last_shot_time = current_time
+
 
             # Remove off-screen bullets
             for bullet in bullets[:]:
-                bullet.y -= bullet_speed
-                if bullet.bottom < 0:
+                bullet['rect'].y -= bullet_speed
+                if bullet['rect'].bottom < 0:
                     bullets.remove(bullet)
+
 
             # Limit the number of bullets
             if len(bullets) > 50:
                 bullets = bullets[-50:]
 
-            if current_time >= enemy_spawn_resume_time:  # Check if cooldown has elapsed
-                if current_time - last_enemy_spawn > enemy_spawn_time:
-                    # Spawn only one enemy until level 20, then increase slowly
-                    spawn_count = 1
-                    if level >= 20:
-                        spawn_count = 2
-                    if level >= 40:
-                        spawn_count = 3
-                    for _ in range(spawn_count):
-                        enemy = pygame.Rect(random.randint(0, WIDTH-50), -50, 50, 50)
-                        enemies.append(enemy)
-                    last_enemy_spawn = current_time
+
+            # Boss fight trigger
+            if not boss_active and score >= 100:
+                boss_active = True
+                boss = pygame.Rect(WIDTH//2 - 75, -150, 150, 100)
+                boss_health = boss_max_health
+                boss_bullets = []
+                # Pause normal enemy spawns
+                enemies.clear()
+                enemy_bullets.clear()
+
+            # Normal enemy spawn only if boss is not active
+            if not boss_active:
+                if current_time >= enemy_spawn_resume_time:  # Check if cooldown has elapsed
+                    if current_time - last_enemy_spawn > enemy_spawn_time:
+                        # Spawn only one enemy until level 20, then increase slowly
+                        spawn_count = 1
+                        if level >= 20:
+                            spawn_count = 2
+                        if level >= 40:
+                            spawn_count = 3
+                        for _ in range(spawn_count):
+                            enemy = pygame.Rect(random.randint(0, WIDTH-50), -50, 50, 50)
+                            enemies.append(enemy)
+                        last_enemy_spawn = current_time
 
             # Enemy shooting logic removed for survival mode
 
             if game_state == "play" and not pause:
-                # During dash, make player invulnerable to enemies and bullets
-                player_is_invulnerable = 'dash_invulnerable' in globals() and dash_invulnerable
                 # Move enemy bullets
                 for bullet in enemy_bullets[:]:
                     bullet.y += enemy_bullet_speed
                     if bullet.top > HEIGHT:  # Remove bullets that go off-screen
                         enemy_bullets.remove(bullet)
                     elif bullet.colliderect(player):  # Check collision with the player
-                        if not shield and not player_is_invulnerable:  # If not shielded or dashing, reduce health
+                        if not shield and not sprinting:  # If not shielded or sprinting, reduce health
                             health -= 1
                         enemy_bullets.remove(bullet)
                         if health <= 0:
@@ -568,8 +614,10 @@ while running:
                         })
                         continue
                     if enemy.colliderect(player):
-                        if not shield and not player_is_invulnerable:
+                        if not shield and not sprinting:
                             health -= 1
+                            enemies.remove(enemy)
+                        elif sprinting:
                             enemies.remove(enemy)
                         if health <= 0:
                             pygame.mixer.music.stop()
@@ -580,7 +628,7 @@ while running:
                     # Track if this enemy was hit by a bullet this frame
                     hit_this_frame = False
                     for bullet in bullets[:]:
-                        if enemy.colliderect(bullet):
+                        if enemy.colliderect(bullet['rect']):
                             bullets.remove(bullet)
                             enemies.remove(enemy)
                             score += 1
@@ -623,26 +671,76 @@ while running:
             for bullet in enemy_bullets:
                 pygame.draw.rect(WIN, RED, bullet)
 
-            # Update enemies
-            for enemy in enemies[:]:
-                move_enemy(enemy)
-                if enemy.colliderect(player):
-                    if not shield:
-                        health -= 1
-                        enemies.remove(enemy)
-                    if health <= 0:
-                        pygame.mixer.music.stop()
-                        play_fx(game_over_sound, channel_fx_hit, hit_sound_volume)
-                        game_state = "game_over"
-                        break
 
+
+            # Update enemies (skip if boss is active)
+            if not boss_active:
+                for enemy in enemies[:]:
+                    move_enemy(enemy)
+                    if enemy.colliderect(player):
+                        if not shield:
+                            health -= 1
+                            enemies.remove(enemy)
+                        if health <= 0:
+                            pygame.mixer.music.stop()
+                            play_fx(game_over_sound, channel_fx_hit, hit_sound_volume)
+                            game_state = "game_over"
+                            break
+
+                    for bullet in bullets[:]:
+                        if enemy.colliderect(bullet['rect']):
+                            if bullet['piercing']:
+                                enemies.remove(enemy)
+                                score += 1
+                                play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                                # Do NOT remove bullet, allow it to keep going
+                                break
+                            else:
+                                bullets.remove(bullet)
+                                enemies.remove(enemy)
+                                score += 1
+                                play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                                break
+
+            # Boss logic
+            if boss_active:
+                # Move boss into view
+                if boss.y < boss_entry_y:
+                    boss.y += 4
+                # Boss attacks
+                if pygame.time.get_ticks() - boss_last_attack > boss_attack_cooldown:
+                    # Fire a spread of bullets
+                    for dx in [-40, -20, 0, 20, 40]:
+                        boss_bullets.append({'rect': pygame.Rect(boss.centerx + dx - 5, boss.bottom, 10, 20), 'velocity': (dx//10, 8)})
+                    boss_last_attack = pygame.time.get_ticks()
+                # Move boss bullets
+                for b in boss_bullets[:]:
+                    b['rect'].x += b['velocity'][0]
+                    b['rect'].y += b['velocity'][1]
+                    if b['rect'].top > HEIGHT or b['rect'].left < 0 or b['rect'].right > WIDTH:
+                        boss_bullets.remove(b)
+                    elif b['rect'].colliderect(player):
+                        boss_bullets.remove(b)
+                        if not shield and not sprinting:
+                            health -= 2
+                        if health <= 0:
+                            pygame.mixer.music.stop()
+                            play_fx(game_over_sound, channel_fx_hit, hit_sound_volume)
+                            game_state = "game_over"
+                # Boss takes damage from player bullets
                 for bullet in bullets[:]:
-                    if enemy.colliderect(bullet):
-                        bullets.remove(bullet)
-                        enemies.remove(enemy)
-                        score += 1
+                    if boss.colliderect(bullet['rect']):
+                        boss_health -= 2 if bullet['piercing'] else 1
+                        if not bullet['piercing']:
+                            bullets.remove(bullet)
                         play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
-                        break
+                        if boss_health <= 0:
+                            boss_active = False
+                            boss = None
+                            boss_bullets.clear()
+                            # Reward player
+                            score += 20
+                            break
 
             # Limit the number of enemies
             if len(enemies) > 20:
@@ -653,6 +751,7 @@ while running:
                 if current_time - last_powerup_spawn > powerup_spawn_time:
                     spawn_powerup()
                     last_powerup_spawn = current_time
+
 
                 # Update power-ups
                 for powerup in powerups[:]:
@@ -683,6 +782,14 @@ while running:
                             splash_active = True  # Activate the splash effect
                             splash_start_time = pygame.time.get_ticks()  # Record the start time
                             enemy_spawn_resume_time = pygame.time.get_ticks() + enemy_spawn_cooldown  # Set the cooldown timer
+                        elif powerup["type"] == "double_gun":
+                            gun_upgrades['double'] = pygame.time.get_ticks() + GUN_UPGRADE_DURATION
+                        elif powerup["type"] == "triple_gun":
+                            gun_upgrades['triple'] = pygame.time.get_ticks() + GUN_UPGRADE_DURATION
+                        elif powerup["type"] == "rapid_gun":
+                            gun_upgrades['rapid'] = pygame.time.get_ticks() + GUN_UPGRADE_DURATION
+                        elif powerup["type"] == "piercing_gun":
+                            gun_upgrades['piercing'] = pygame.time.get_ticks() + GUN_UPGRADE_DURATION
 
                         powerups.remove(powerup)  # Remove the power-up after collection
 
@@ -726,6 +833,20 @@ while running:
                 high_score = score
 
         pygame.draw.rect(WIN, BLUE, player)
+
+        # Draw sprinting effect (trail and glow)
+        if 'sprint_trail' in globals() and sprint_trail:
+            for i, (tx, ty) in enumerate(sprint_trail):
+                alpha = int(80 * (1 - i / len(sprint_trail)))
+                trail_surf = pygame.Surface((player.width, player.height), pygame.SRCALPHA)
+                trail_surf.fill((0, 255, 0, alpha))
+                WIN.blit(trail_surf, (tx, ty))
+        if 'sprinting' in locals() and sprinting:
+            # Draw a green glow around the player
+            glow_size = 16
+            glow_surf = pygame.Surface((player.width + glow_size, player.height + glow_size), pygame.SRCALPHA)
+            pygame.draw.rect(glow_surf, (0, 255, 0, 120), (glow_size//2, glow_size//2, player.width, player.height), border_radius=8)
+            WIN.blit(glow_surf, (player.x - glow_size//2, player.y - glow_size//2))
 
         # Draw the shield animation
         if shield:
@@ -773,16 +894,47 @@ while running:
         else:
             pygame.draw.rect(WIN, RED, (WIDTH//2 - 100, 10, bar_width, 20))
 
+        # Draw static energy bar under health bar
+        pygame.draw.rect(WIN, WHITE, (WIDTH//2 - 100, 35, 200, 20))  # Background of energy bar
+        energy_bar_width = (energy / max_energy) * 200
+        # Show cooldown visually: if energy is 0 and cooldown is active, fill bar gray with countdown
+        if energy == 0 and current_time - energy_depleted_time < energy_cooldown:
+            cooldown_elapsed = current_time - energy_depleted_time
+            cooldown_ratio = min(1.0, cooldown_elapsed / energy_cooldown)
+            cooldown_bar_width = int(200 * cooldown_ratio)
+            # Draw gray bar filling up to show countdown
+            pygame.draw.rect(WIN, (100, 100, 100), (WIDTH//2 - 100, 35, cooldown_bar_width, 20))
+        else:
+            pygame.draw.rect(WIN, (0, 255, 0), (WIDTH//2 - 100, 35, energy_bar_width, 20))  # Green energy bar
+        energy_label = font.render("Energy", True, WHITE)
+        WIN.blit(energy_label, (WIDTH//2 - 100, 60))
+
         # Draw score and level
         WIN.blit(font.render(f"Score: {score}", True, WHITE), (10, 10))
         WIN.blit(font.render(f"Level: {level}", True, WHITE), (WIDTH - 150, 10))
         WIN.blit(font.render(f"High Score: {high_score}", True, WHITE), (10, 40))
 
+
         for bullet in bullets:
-            pygame.draw.rect(WIN, BLUE, bullet)
+            color = (0, 255, 255) if bullet['piercing'] else BLUE
+            pygame.draw.rect(WIN, color, bullet['rect'])
+
+        # Draw boss if active
+        if boss_active and boss:
+            pygame.draw.rect(WIN, (180, 0, 180), boss)
+            # Boss health bar
+            pygame.draw.rect(WIN, WHITE, (WIDTH//2 - 100, 70, 200, 20))
+            boss_bar_width = (boss_health / boss_max_health) * 200
+            pygame.draw.rect(WIN, (255, 0, 255), (WIDTH//2 - 100, 70, boss_bar_width, 20))
+            boss_label = font.render("BOSS", True, (255, 0, 255))
+            WIN.blit(boss_label, (WIDTH//2 - boss_label.get_width()//2, 45))
+            # Draw boss bullets
+            for b in boss_bullets:
+                pygame.draw.rect(WIN, (255, 100, 255), b['rect'])
 
         for enemy in enemies:
             pygame.draw.rect(WIN, RED, enemy)
+
 
         for powerup in powerups:
             if powerup["type"] == "health":
@@ -791,6 +943,24 @@ while running:
                 pygame.draw.rect(WIN, BLUE, powerup["rect"])  # Shield power-up
             elif powerup["type"] == "clear_enemies":
                 pygame.draw.rect(WIN, YELLOW, powerup["rect"])  # Clear enemies power-up
+            elif powerup["type"] == "double_gun":
+                pygame.draw.rect(WIN, (0, 200, 255), powerup["rect"])  # Cyan for double gun
+            elif powerup["type"] == "triple_gun":
+                pygame.draw.rect(WIN, (255, 100, 0), powerup["rect"])  # Orange for triple gun
+            elif powerup["type"] == "rapid_gun":
+                pygame.draw.rect(WIN, (255, 0, 255), powerup["rect"])  # Magenta for rapid fire
+            elif powerup["type"] == "piercing_gun":
+                pygame.draw.rect(WIN, (255, 255, 255), powerup["rect"])  # White for piercing
+        # Draw current gun upgrade indicator
+        if gun_upgrades:
+            upgrade_names = []
+            if 'double' in gun_upgrades: upgrade_names.append('Double')
+            if 'triple' in gun_upgrades: upgrade_names.append('Triple')
+            if 'rapid' in gun_upgrades: upgrade_names.append('Rapid')
+            if 'piercing' in gun_upgrades: upgrade_names.append('Piercing')
+            if upgrade_names:
+                upgrade_label = font.render(f"Gun: {' + '.join(upgrade_names)}", True, (0,255,255))
+                WIN.blit(upgrade_label, (WIDTH//2 - upgrade_label.get_width()//2, 90))
 
         if pause:
             pause_text = big_font.render("PAUSED", True, WHITE)
@@ -848,24 +1018,46 @@ while running:
                 player.x += sprint_speed * 10 if keys[pygame.K_d] and player.right < WIDTH else 0
                 player.x -= sprint_speed * 10 if keys[pygame.K_a] and player.left > 0 else 0
 
-            # Shooting logic
+
+            # Handle gun upgrade expiration (combinable, arena mode)
+            now = pygame.time.get_ticks()
+            expired = [k for k, v in gun_upgrades.items() if now > v]
+            for k in expired:
+                del gun_upgrades[k]
+
+            # Shooting logic (combinable upgrades, arena mode)
             if keys[pygame.K_SPACE]:
                 current_time = pygame.time.get_ticks()
-                if current_time - last_shot_time >= shoot_cooldown:
-                    bullet = pygame.Rect(player.centerx - 5, player.y, 10, 20)
-                    bullets.append(bullet)
+                upgrades = set(gun_upgrades.keys())
+                cooldown = rapid_fire_cooldown if 'rapid' in upgrades else shoot_cooldown
+                if current_time - last_shot_time >= cooldown:
+                    bullet_defs = []
+                    if 'triple' in upgrades:
+                        bullet_defs = [player.centerx - 15, player.centerx - 5, player.centerx + 5]
+                    elif 'double' in upgrades:
+                        bullet_defs = [player.centerx - 15, player.centerx + 5]
+                    else:
+                        bullet_defs = [player.centerx - 5]
+                    for bx in bullet_defs:
+                        bullet = {'rect': pygame.Rect(bx, player.y, 10, 20), 'piercing': 'piercing' in upgrades}
+                        bullets.append(bullet)
                     play_fx(shoot_sound, channel_fx_shoot, shoot_sound_volume)
                     last_shot_time = current_time
 
-            # Move bullets
+            # Move bullets (arena mode, dict structure)
             for bullet in bullets[:]:
-                bullet.y -= bullet_speed
-                if bullet.bottom < 0:
+                bullet['rect'].y -= bullet_speed
+                if bullet['rect'].bottom < 0:
                     bullets.remove(bullet)
-                elif bullet.colliderect(arena_enemy):
-                    bullets.remove(bullet)
-                    arena_enemy_health -= 1
-                    play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                elif bullet['rect'].colliderect(arena_enemy):
+                    if bullet['piercing']:
+                        arena_enemy_health -= 1
+                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                        # Do NOT remove bullet, allow it to keep going
+                    else:
+                        bullets.remove(bullet)
+                        arena_enemy_health -= 1
+                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
 
 
             # Improved Arena Enemy AI
@@ -993,9 +1185,11 @@ while running:
                 play_fx(game_over_sound, channel_fx_hit, hit_sound_volume)
                 game_state = "game_over"
 
-            # Draw bullets
+
+            # Draw bullets (arena mode, dict structure)
             for bullet in bullets:
-                pygame.draw.rect(WIN, BLUE, bullet)
+                color = (0, 255, 255) if bullet['piercing'] else BLUE
+                pygame.draw.rect(WIN, color, bullet['rect'])
             for bullet in enemy_bullets:
                 pygame.draw.rect(WIN, RED, bullet["rect"])
 
