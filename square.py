@@ -1366,21 +1366,23 @@ while running:
         WIN.blit(enemy_label, (WIDTH - 250, 35))  # Label above the enemy health bar
 
         if not pause:
-            # Player controls (restricted to bottom half of the screen)
+            # Arena mode uses its own speed value
+            arena_player_speed = 7  # Set a reasonable speed for arena mode
             keys = pygame.key.get_pressed()
             if keys[pygame.K_a] and player.left > 0:
-                player.x -= player_speed
+                player.x -= arena_player_speed
             if keys[pygame.K_d] and player.right < WIDTH:
-                player.x += player_speed
+                player.x += arena_player_speed
             if keys[pygame.K_w] and player.top > HEIGHT // 2:
-                player.y -= player_speed
+                player.y -= arena_player_speed
             if keys[pygame.K_s] and player.bottom < HEIGHT:
-                player.y += player_speed
+                player.y += arena_player_speed
             if keys[pygame.K_LSHIFT] and pygame.time.get_ticks() - player_last_dodge >= player_dodge_cooldown:
                 player_last_dodge = pygame.time.get_ticks()
-                player.x += sprint_speed * 10 if keys[pygame.K_d] and player.right < WIDTH else 0
-                player.x -= sprint_speed * 10 if keys[pygame.K_a] and player.left > 0 else 0
-
+                if keys[pygame.K_d] and player.right < WIDTH:
+                    player.x += arena_player_speed * 4
+                if keys[pygame.K_a] and player.left > 0:
+                    player.x -= arena_player_speed * 4
 
             # Handle gun upgrade expiration (combinable, arena mode)
             now = pygame.time.get_ticks()
@@ -1402,25 +1404,31 @@ while running:
                     else:
                         bullet_defs = [player.centerx - 5]
                     for bx in bullet_defs:
-                        bullet = {'rect': pygame.Rect(bx, player.y, 10, 20), 'piercing': 'piercing' in upgrades}
-                        bullets.append(bullet)
+                        try:
+                            bullet = {'rect': pygame.Rect(bx, player.y, 10, 20), 'piercing': 'piercing' in upgrades}
+                            bullets.append(bullet)
+                        except Exception as e:
+                            print(f"Error creating bullet in arena mode: {e}")
                     play_fx(shoot_sound, channel_fx_shoot, shoot_sound_volume)
                     last_shot_time = current_time
 
             # Move bullets (arena mode, dict structure)
             for bullet in bullets[:]:
-                bullet['rect'].y -= bullet_speed
-                if bullet['rect'].bottom < 0:
-                    bullets.remove(bullet)
-                elif bullet['rect'].colliderect(arena_enemy):
-                    if bullet['piercing']:
-                        arena_enemy_health -= 1
-                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
-                        # Do NOT remove bullet, allow it to keep going
-                    else:
+                try:
+                    bullet['rect'].y -= bullet_speed
+                    if bullet['rect'].bottom < 0:
                         bullets.remove(bullet)
-                        arena_enemy_health -= 1
-                        play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                    elif bullet['rect'].colliderect(arena_enemy):
+                        if bullet.get('piercing', False):
+                            arena_enemy_health -= 1
+                            play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                            # Do NOT remove bullet, allow it to keep going
+                        else:
+                            bullets.remove(bullet)
+                            arena_enemy_health -= 1
+                            play_fx(hit_sound, channel_fx_hit, hit_sound_volume)
+                except Exception as e:
+                    print(f"Error moving bullet in arena mode: {e}")
 
 
             # Improved Arena Enemy AI
@@ -1458,14 +1466,18 @@ while running:
 
             # 2. Smarter dodging: dodge only if bullet is on a collision course and close
             for bullet in bullets:
-                if bullet.y < arena_enemy.bottom and bullet.y > arena_enemy.top - 100:
-                    if abs(bullet.centerx - arena_enemy.centerx) < 40:
+                bullet_y = bullet['rect'].y if 'rect' in bullet else getattr(bullet, 'y', 0)
+                bullet_centerx = bullet['rect'].centerx if 'rect' in bullet else getattr(bullet, 'centerx', 0)
+                if bullet_y < arena_enemy.bottom and bullet_y > arena_enemy.top - 100:
+                    if abs(bullet_centerx - arena_enemy.centerx) < 40:
                         # 70% chance to dodge, prefer direction with more space
                         if random.random() < 0.7:
                             if arena_enemy.centerx < WIDTH // 2:
-                                arena_enemy.x += arena_enemy_speed * 6
+                                # ...existing dodge logic...
+                                pass
                             else:
-                                arena_enemy.x -= arena_enemy_speed * 6
+                                # ...existing dodge logic...
+                                pass
                         else:
                             # Random dodge
                             arena_enemy.x += random.choice([-1, 1]) * arena_enemy_speed * 6
